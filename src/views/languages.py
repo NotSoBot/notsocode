@@ -11,6 +11,6 @@ languages = Blueprint('languages', url_prefix='/languages')
 @languages.get('')
 async def get_languages(request: Request):
     result = []
-    for language in languages:
+    for language in Languages:
         result.append(language.to_dict())
     return json(result)

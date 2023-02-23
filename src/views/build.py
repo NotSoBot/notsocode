@@ -2,7 +2,7 @@ from sanic import Blueprint, Request
 from sanic.response import json
 from sanic_dantic import parse_params
 
-from api.notsocode import NotSoCode
+from notsocode import NotSoCode
 from utilities.constants import Languages
 from validators.models.build import BuildSingle
 

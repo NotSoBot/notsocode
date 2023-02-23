@@ -2,6 +2,7 @@ import os
 import time
 import traceback
 
+from dotenv import load_dotenv
 from pydantic import ValidationError
 from sanic import HTTPResponse, Sanic, Request
 from sanic.exceptions import SanicException
@@ -13,16 +14,18 @@ from views import latest, v1
 
 
 
+load_dotenv()
+
+
 app = Sanic('notsocode', router=MyRouter())
 app.config.SANIC_DANTIC_ERROR = True
 
 app.blueprint(latest)
-#app.blueprint(v1)
+app.blueprint(v1)
 
 
 @app.on_request
 def before_request(request: Request):
-    print(request, flush=True)
     request.ctx.started = time.time()
     if not os.getenv('SECRET'):
         raise SanicException('Secret required in environment variables', status_code=500)

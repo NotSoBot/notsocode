@@ -1,5 +1,6 @@
 from urllib.parse import quote
 
+from sanic.exceptions import NotFound
 from sanic.router import Router
 
 

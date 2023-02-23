@@ -55,7 +55,6 @@ class Languages(Enumerable):
     def versions(self):
         return self.value[1]
 
-    @property
     def to_dict(self):
         return {
             'extension': self.extension,

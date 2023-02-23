@@ -38,7 +38,7 @@ ULIMIT_PROCESSES = 128
 class NotSoCode:
     client = None
     client_api = None
-    dockerfiles_directory = '../dockerfiles'
+    dockerfiles_directory = '/dockerfiles'
     tag_prepend = 'notsocode'
 
     @classmethod
@@ -129,8 +129,8 @@ class NotSoCode:
     ):
         tar_stream = cls.create_tar(
             files=[
-                (code.encode(), f'{FILENAME_SCRIPT}.{language.extension}', None),
-                (stdin.encode(), FILENAME_STDIN, None),
+                (code.encode(), f'{FILENAME_SCRIPT}.{language.extension}'),
+                (stdin.encode(), FILENAME_STDIN),
                 *[(x['buffer'], DIRECTORY_INPUT + '/' + x['filename']) for x in files],
             ],
             directories=[DIRECTORY_INPUT, DIRECTORY_OUTPUT],
