@@ -17,12 +17,32 @@ execute = Blueprint('execute', url_prefix='/execute')
 @execute.post('')
 @parse_params(all=Execute)
 async def execute_script(request: Request, params=Execute):
-    # todo: get files from request.storage
+    files = []
+    for storages in request.files.values():
+        for storage in storages:
+            files.append({
+                'buffer': storage.body,
+                'filename': storage.name,
+            })
+
+    file_counter: dict[str, int] = {}
+    for i in range(len(files)):
+        file_ = files[i]
+        filename = file_['filename']
+
+        count = 0
+        if filename in file_counter:
+            count = file_counter[filename] + 1
+            parts = filename.split('.')
+            filename_new = '.'.join(parts[:-1]) + f' ({count}).{parts[-1]}'
+            file_['filename'] = filename_new
+        file_counter[filename] = count
+
     result = await NotSoCode.execute(
         params.language,
         params.code,
         version=params.version,
-        files=[],
+        files=files,
         stdin=params.stdin,
     )
     return json(result)
