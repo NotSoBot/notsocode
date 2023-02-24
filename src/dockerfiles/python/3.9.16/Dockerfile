@@ -1,30 +1,16 @@
-FROM python:3.9.16-buster
+ARG BASE_IMAGE=base-buster
+FROM $BASE_IMAGE
 
-ARG DIRECTORY_HOME=/home
-ARG USER=notsocoder
-ARG USER_UID=42069
+RUN apt install -y zlib1g zlib1g-dev libssl-dev
 
-RUN adduser --disabled-password  --gecos "" --home "$DIRECTORY_HOME" --no-create-home --uid "$USER_UID" "$USER"
-RUN mkdir -p $DIRECTORY_HOME && chown -R "$USER":"$USER" $DIRECTORY_HOME && chmod g+s $DIRECTORY_HOME
-USER notsocoder
+WORKDIR /tmp
+RUN mkdir -p ./build && cd ./build && wget "https://www.python.org/ftp/python/3.9.16/Python-3.9.16.tgz" -q -O python.tar.gz && tar xzf python.tar.gz --strip-components=1
+RUN cd ./build && ./configure --with-ensurepip=install && make -j$(nproc) && make install -j$(nproc) && cd ../ && rm -rf ./build
 
-WORKDIR $HOME
-
-RUN python -m pip install numpy scipy pandas pycrypto whoosh bcrypt passlib sympy
-
+RUN python3.9 -m pip install --upgrade pip
+RUN python3.9 -m pip uninstall -y setuptools && python3.9 -m pip install setuptools
+RUN python3.9 -m pip install numpy scipy pandas pycrypto whoosh bcrypt passlib sympy
 ADD requirements.txt ./
-RUN python -m pip install -r requirements.txt
+RUN python3.9 -m pip install -r requirements.txt
 
-ARG DIRECTORY_OUTPUT=$DIRECTORY_HOME/output
-ARG MAX_FILES=10
-
-ENV DIRECTORY_OUTPUT=$DIRECTORY_OUTPUT
-ENV HOME=$DIRECTORY_HOME
-ENV MAX_FILES=$MAX_FILES
-ENV USER=$USER
-
-USER root
-ENTRYPOINT chown -R "$USER":"$USER" $HOME && su - $USER && \
-    (if (test -e stdin); then cat stdin; fi;) | \
-    python3.9 $(find . -name "script*" -print -quit) && \
-    (if (test -d "$DIRECTORY_OUTPUT"); then cd $DIRECTORY_OUTPUT && rm -rf -- */ && ls -1tr | head -n -$MAX_FILES | xargs -d "\n" rm -rf --; fi;)
+ENV COMMAND='python3.9 $SCRIPT'

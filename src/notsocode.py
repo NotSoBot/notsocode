@@ -27,6 +27,8 @@ FILENAME_SCRIPT = 'script'
 FILENAME_STDIN = 'stdin'
 
 MAX_FILES = 10
+MAX_MEMORY = '128m'
+MAX_RESULT_LENGTH = 1 * 1024 * 1024
 MAX_STORAGE_SIZE = '256m'
 
 ULIMIT_FILE_SIZE = 100 * 1024 * 1024
@@ -36,6 +38,8 @@ ULIMIT_PROCESSES = 128
 
 
 class NotSoCode:
+    BUILD_STATUS: dict[str, bool] = {}
+
     client = None
     client_api = None
     dockerfiles_directory = '/dockerfiles'
@@ -89,6 +93,12 @@ class NotSoCode:
 
     @classmethod
     def _build_sync(cls, directory: str, tag: str, base: Optional[BaseImages] = None, **kwargs):
+        if tag in cls.BUILD_STATUS:
+            if not cls.BUILD_STATUS[tag]:
+                raise Exception(f'{tag} is currently being built, come back later')
+            return
+
+        cls.BUILD_STATUS[tag] = False
         kwargs['buildargs'] = {
             'BASE_IMAGE': base.tag if base else BaseImages.BUSTER.tag,
             'DIRECTORY_HOME': DIRECTORY_HOME,
@@ -105,7 +115,10 @@ class NotSoCode:
         print(lines, flush=True)
 
         if 'errorDetail' in lines[-1]:
+            del cls.BUILD_STATUS[tag]
             raise Exception('\n'.join(x.get('error', x.get('stream', '')) for x in lines))#last_line['errorDetail']['message'])
+
+        cls.BUILD_STATUS[tag] = True
         return lines
 
     @classmethod
@@ -128,18 +141,42 @@ class NotSoCode:
         tar_stream.seek(0)
         return tar_stream
 
-    # stdin https://github.com/docker/docker-py/issues/3057#issuecomment-1290140396
+
     @classmethod
     @asyncify()
-    def execute(
+    def build_and_test(cls, language_: Languages, version: Optional[str] = None) -> bool:
+        extension = language_.extension
+        language = language_.language
+        extension = language_.extension
+        version = version or language_.default_version
+        filepath = os.path.dirname(__file__) + os.path.join(cls.dockerfiles_directory, language, version or '', f'test.{extension}')
+        if not os.path.exists(filepath):
+            raise Exception(f'Test for {cls.generate_tag(language_, version=version)} does not exist.')
+    
+        with open(filepath, 'r') as f:
+            code = f.read()
+
+        cls.build_sync(language_, version=version, base=BaseImages.BUSTER)
+        result = cls.execute_sync(language_, code, version=version)
+        return result['result']['output'] == 'OK'
+
+    @classmethod
+    @asyncify()
+    def execute(cls, *args, **kwargs):
+        return cls.execute_sync(*args, **kwargs)
+
+    # stdin https://github.com/docker/docker-py/issues/3057#issuecomment-1290140396
+    @classmethod
+    def execute_sync(
         cls,
         language: Languages,
         code: str,
         version: Optional[str] = None,
         files: list[dict] = [],
+        max_memory: Union[int, str] = MAX_MEMORY,
         stdin: str = '',
         timeout: int = 10,
-    ):
+    ) -> dict:
         now = time.time()
         tar_stream = cls.create_tar(
             files=[
@@ -167,7 +204,10 @@ class NotSoCode:
                 detach=True,
                 # device read/write limits
                 #kernel_memory=1,
-                #mem_limit='256m',
+                log_config=docker.types.LogConfig(config={
+                    'max-size': str(MAX_RESULT_LENGTH * 2),
+                }),
+                mem_limit=MAX_MEMORY,
                 #mounts=[
                 #    docker.types.Mount(
                 #        target='/home',
@@ -206,6 +246,8 @@ class NotSoCode:
                 print(container.logs(stdout=False, stderr=True), flush=True)
                 raise ValueError(f'Code Execution took longer than {timeout} seconds')
 
+            print('done execution', int((time.time() - now) * 1000), flush=True)
+
             output = container.logs(stdout=True, stderr=False)
             error = container.logs(stdout=False, stderr=True)
 
@@ -239,9 +281,9 @@ class NotSoCode:
         return {
             'language': language.language,
             'result': {
-                'error': error.decode().strip(),
+                'error': error.decode().strip()[:MAX_RESULT_LENGTH],
                 'files': files_output,
-                'output': output.decode().strip(),
+                'output': output.decode().strip()[:MAX_RESULT_LENGTH],
             },
             'took': int((time.time() - now) * 1000),
             'version': version or language.default_version,

@@ -1,8 +1,15 @@
 ARG BASE_IMAGE=base-buster
 FROM $BASE_IMAGE
 
-WORKDIR /tmp
-RUN mkdir -p ./build && cd ./build && wget "https://nodejs.org/dist/v19.7.0/node-v19.7.0.tar.gz" -O node.tar.gz && tar xzf node.tar.gz --strip-components=1
-RUN cd ./build && make -j$(nproc) && make test && make install -j$(nproc) && cd ../ && rm -rf ./build
+RUN apt install -y python3
 
-ENV COMMAND='node $SCRIPT'
+WORKDIR /tmp
+RUN mkdir -p ./build && cd ./build && wget "https://nodejs.org/dist/v19.7.0/node-v19.7.0-linux-x64.tar.gz" -q -O node.tar.gz && tar xzf node.tar.gz --strip-components=1
+RUN cd ./build && cp -R ./ /usr && rm -rf ./build
+
+RUN npm config set prefix '~/.local/'
+RUN npm install -g -y jssoup@0.0.15
+RUN npm install -g -y imagescript@1.2.16 sharp@0.31.3
+#RUN npm install -g -y @ffmpeg/ffmpeg@0.11.6 @ffmpeg/core@0.11.0
+
+ENV COMMAND='export NODE_PATH=$(npm root --quiet -g) && node $SCRIPT'

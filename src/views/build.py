@@ -14,9 +14,10 @@ build = Blueprint('build', url_prefix='/build')
 @build.post('')
 @parse_params(all=BuildSingle)
 async def build_single(request: Request, params=BuildSingle):
-    await NotSoCode.build(params.language, version=params.version)
+    tested = await NotSoCode.build_and_test(params.language, version=params.version)
     return json({
         'language': params.language.to_dict(),
+        'tested': tested,
         'version': params.version or params.language.version,
     })
 
@@ -24,7 +25,10 @@ async def build_single(request: Request, params=BuildSingle):
 @build.post('/all')
 async def build_all(request: Request):
     # todo: maybe use asyncio.gather? it'll hammer the cpu tho
+    results = []
     for language in Languages:
+        tested = {}
         for version in language.versions:
-            await NotSoCode.build(language, version=version)
-    return json([language.to_dict() for language in Languages])
+            tested['version'] = await NotSoCode.build_and_test(language, version=version)
+        results.append({'language': language.to_dict(), 'tested': tested})
+    return json(results)
