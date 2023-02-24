@@ -51,6 +51,7 @@ async def execute_script(request: Request, params=Execute):
 @execute.post('/test')
 async def execute_script_test(request: Request):
     # todo: get files from request.storage
+    await NotSoCode.execute(Languages.BASH, 'echo "OK"')
     futures = []
     for i in range(200):
         future = NotSoCode.execute(Languages.BASH, 'echo "OK"')
