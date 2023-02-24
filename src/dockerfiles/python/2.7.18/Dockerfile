@@ -1,27 +1,13 @@
-FROM python:2.7.18-buster
+ARG BASE_IMAGE=base-buster
+FROM $BASE_IMAGE
 
-ARG DIRECTORY_HOME=/home
-ARG USER=notsocoder
-ARG USER_UID=42069
+RUN apt update && apt install -y libreadline-dev
 
-RUN adduser --disabled-password  --gecos "" --home "$DIRECTORY_HOME" --no-create-home --uid "$USER_UID" "$USER"
-RUN mkdir -p $DIRECTORY_HOME && chown -R "$USER":"$USER" $DIRECTORY_HOME && chmod g+s $DIRECTORY_HOME
-USER notsocoder
+WORKDIR /tmp
+RUN mkdir -p ./build && cd ./build && wget "https://www.python.org/ftp/python/2.7.18/Python-2.7.18.tgz" -O python.tar.gz && tar xzf python.tar.gz --strip-components=1
+RUN cd ./build && ./configure --with-ensurepip=install && make -j$(nproc) && make test && make install -j$(nproc) && cd ../ && rm -rf ./build
+RUN python2.7 -m pip install -U pip==20.3.*
 
-WORKDIR $HOME
+RUN python2.7 -m pip install install numpy scipy pycrypto whoosh bcrypt passlib
 
-RUN python -m pip install numpy scipy pycrypto whoosh bcrypt passlib
-
-ARG DIRECTORY_OUTPUT=$DIRECTORY_HOME/output
-ARG MAX_FILES=10
-
-ENV DIRECTORY_OUTPUT=$DIRECTORY_OUTPUT
-ENV HOME=$DIRECTORY_HOME
-ENV MAX_FILES=$MAX_FILES
-ENV USER=$USER
-
-USER root
-ENTRYPOINT chown -R "$USER":"$USER" $HOME && su - $USER && \
-    (if (test -e stdin); then cat stdin; fi;) | \
-    python2.7 $(find . -name "script*" -print -quit) && \
-    (if (test -d "$DIRECTORY_OUTPUT"); then cd $DIRECTORY_OUTPUT && rm -rf -- */ && ls -1tr | head -n -$MAX_FILES | xargs -d "\n" rm -rf --; fi;)
+ENV COMMAND='python2.7 $SCRIPT'

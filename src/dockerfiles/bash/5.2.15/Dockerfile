@@ -1,27 +1,8 @@
-FROM bash:5.2.15-alpine3.16
+ARG BASE_IMAGE=base-buster
+FROM $BASE_IMAGE
 
-RUN apk add findutils
+WORKDIR /tmp
+RUN mkdir -p build && cd ./build && wget "https://ftp.gnu.org/gnu/bash/bash-5.2.15.tar.gz" -O bash.tar.gz && tar xvfz bash.tar.gz --strip-components=1
+RUN cd ./build && ./configure && make -j$(nproc) && make install -j$(nproc)
 
-ARG DIRECTORY_HOME=/home
-ARG USER=notsocoder
-ARG USER_UID=42069
-
-RUN adduser --disabled-password  --gecos "" --home "$DIRECTORY_HOME" --no-create-home --uid "$USER_UID" "$USER"
-RUN mkdir -p $DIRECTORY_HOME && chown -R "$USER":"$USER" $DIRECTORY_HOME && chmod g+s $DIRECTORY_HOME
-USER notsocoder
-
-WORKDIR $DIRECTORY_HOME
-
-ARG DIRECTORY_OUTPUT=$DIRECTORY_HOME/output
-ARG MAX_FILES=10
-
-ENV DIRECTORY_OUTPUT=$DIRECTORY_OUTPUT
-ENV HOME=$DIRECTORY_HOME
-ENV MAX_FILES=$MAX_FILES
-ENV USER=$USER
-
-USER root
-ENTRYPOINT chown -R "$USER":"$USER" $HOME && su - $USER && \
-    (if (test -e stdin); then cat stdin; fi;) | \
-    bash $(find . -name "script*" -print -quit) && \
-    (if (test -d "$DIRECTORY_OUTPUT"); then cd $DIRECTORY_OUTPUT && rm -rf -- */ && ls -1tr | head -n -$MAX_FILES | xargs -d "\n" rm -rf --; fi;)
+ENV COMMAND='bash $SCRIPT'

@@ -29,11 +29,18 @@ class Enumerable(Enum):
         return self.name
 
 
+class BaseImages(Enumerable):
+    BUSTER = ('base', 'buster')
+
+    @property
+    def tag(self):
+        return f'{self.value[0]}-{self.value[1]}'
+
 
 class Languages(Enumerable):
     BASH = ('bash', ('5.2.15',), None, 'sh')
     LUA = ('lua', ('5.4.4',), None, 'lua')
-    NODE = ('node', ('19.6.1',), None, 'js')
+    NODE = ('node', ('19.7.0',), None, 'js')
     PYTHON = ('python', ('2.7.18', '3.9.16', '3.11.2'), '3.9.16', 'py')
     PYTHON_2 = ('python', ('2.7.18',), None, 'py')
     RUST = ('rust', ('1.67.1',), None, 'rs')

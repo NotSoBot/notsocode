@@ -9,7 +9,7 @@ from typing import Optional, Union
 import docker
 import requests
 
-from utilities.constants import Languages
+from utilities.constants import BaseImages, Languages
 from utilities.wrappers import asyncify
 
 
@@ -45,7 +45,7 @@ class NotSoCode:
     def generate_tag(cls, language_: Languages, version: Optional[str] = None):
         language = language_.language
         version = version or language_.default_version
-        return f'{cls.tag_prepend}-{language}-{version}'
+        return f'{cls.tag_prepend}-{language}:{version}'
 
     @classmethod
     def get_api_client(cls):
@@ -68,7 +68,7 @@ class NotSoCode:
         return cls.build_sync(language_, version=version, **kwargs)
 
     @classmethod
-    def build_sync(cls, language_: Languages, version: Optional[str] = None, **kwargs):
+    def build_sync(cls, language_: Languages, version: Optional[str] = None, base: Optional[BaseImages] = None, **kwargs):
         print(kwargs, flush=True)
         language = language_.language
         version = version or language_.default_version
@@ -77,7 +77,20 @@ class NotSoCode:
         if not os.path.exists(directory):
             raise Exception('Invalid Build')
 
+        if base is not None:
+            cls.build_base_sync(base)
+
+        return cls._build_sync(directory, cls.generate_tag(language_, version=version), base=base, **kwargs)
+
+    @classmethod
+    def build_base_sync(cls, base: BaseImages, **kwargs):
+        directory = os.path.dirname(__file__) + os.path.join(cls.dockerfiles_directory, base.value[0], base.value[1])
+        return cls._build_sync(directory, tag=base.tag)
+
+    @classmethod
+    def _build_sync(cls, directory: str, tag: str, base: Optional[BaseImages] = None, **kwargs):
         kwargs['buildargs'] = {
+            'BASE_IMAGE': base.tag if base else BaseImages.BUSTER.tag,
             'DIRECTORY_HOME': DIRECTORY_HOME,
             'DIRECTORY_OUTPUT': DIRECTORY_HOME_OUTPUT,
             'MAX_FILES': str(MAX_FILES),
@@ -87,7 +100,7 @@ class NotSoCode:
 
         client = cls.get_api_client()
         lines = [
-            json.loads(x) for x in client.build(path=directory, tag=cls.generate_tag(language_), forcerm=True, **kwargs)
+            json.loads(x) for x in client.build(path=directory, tag=tag, forcerm=True, **kwargs)
         ]
         print(lines, flush=True)
 
@@ -127,6 +140,7 @@ class NotSoCode:
         stdin: str = '',
         timeout: int = 10,
     ):
+        now = time.time()
         tar_stream = cls.create_tar(
             files=[
                 (code.encode(), f'{FILENAME_SCRIPT}.{language.extension}'),
@@ -136,7 +150,7 @@ class NotSoCode:
             directories=[DIRECTORY_INPUT, DIRECTORY_OUTPUT],
         )
 
-        cls.build_sync(language, version=version)
+        cls.build_sync(language, version=version, base=BaseImages.BUSTER)
         tag = cls.generate_tag(language, version=version)
 
         client = cls.get_client()
@@ -229,5 +243,6 @@ class NotSoCode:
                 'files': files_output,
                 'output': output.decode().strip(),
             },
+            'took': int((time.time() - now) * 1000),
             'version': version or language.default_version,
         }
