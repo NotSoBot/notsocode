@@ -29,7 +29,7 @@ setup_kwargs = {
         'server': server_requires,
     },
     'entry_points': {
-        'console_scripts': ['notsocodeserver = server.app:start'],
+        'console_scripts': ['notsocodeserver = notsocode_server:start'],
     },
 }
 

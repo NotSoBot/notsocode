@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from typing import Any, Union
 
-from notsocode.constants import Languages
+from notsocode import Languages
 
 from .exceptions import InvalidChoiceError
 

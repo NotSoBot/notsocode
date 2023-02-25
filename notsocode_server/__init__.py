@@ -8,9 +8,9 @@ from sanic import HTTPResponse, Sanic, Request
 from sanic.exceptions import SanicException
 from sanic.response import json
 
-from routers import MyRouter
-from utilities.constants import HTTP_STATUS_CODES
-from views import latest, v1
+from notsocode_server.routers import MyRouter
+from notsocode_server.utilities.constants import HTTP_STATUS_CODES
+from notsocode_server.views import latest, v1
 
 
 
