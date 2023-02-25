@@ -23,7 +23,7 @@ setup_kwargs = {
         'Safely execute remote code in docker while being able to pass/read files between them',
     ),
     'packages': ['notsocode'],
-    'packages_dir': {
+    'package_dir': {
         'notsocode': 'src',
     },
     'platforms': 'any',
