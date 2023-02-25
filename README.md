@@ -1,4 +1,4 @@
-# nsb.api.notsocode
+# notsocode
  NotSoCode Executor in Docker
 
 
