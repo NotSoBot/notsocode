@@ -25,10 +25,33 @@ async def build_single(request: Request, params=BuildSingle):
 @build.post('/all')
 async def build_all(request: Request):
     # todo: maybe use asyncio.gather? it'll hammer the cpu tho
+    try:
+        task = request.app.get_task('build-all')
+        return json({'task': 'pending'})
+    except:
+        task = request.app.add_task(_build_all_task(), name='build-all')
+    return json({'task': 'created'})
+
+
+@build.get('/all')
+async def build_all_results(request: Request):
+    try:
+        task = request.app.get_task('build-all')
+        if task:
+            await task
+            return json({'results': task.result(), 'task': 'done'})
+        return json({'results': [], 'task': 'done'})
+    except:
+        pass
+    return json({'results': [], 'task': 'none'})
+
+
+
+async def _build_all_task():
     results = []
     for language in Languages:
         tested = {}
         for version in language.versions:
-            tested['version'] = await NotSoCode.build_and_test(language, version=version)
+            tested[version] = await NotSoCode.build_and_test(language, version=version)
         results.append({'language': language.to_dict(), 'tested': tested})
-    return json(results)
+    return results

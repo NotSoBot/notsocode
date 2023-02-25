@@ -26,6 +26,7 @@ app.blueprint(v1)
 
 @app.on_request
 def before_request(request: Request):
+    request.ctx.jobs = set()
     request.ctx.started = time.time()
     if not os.getenv('SECRET'):
         raise SanicException('Secret required in environment variables', status_code=500)
@@ -34,7 +35,10 @@ def before_request(request: Request):
 
 
 @app.on_response
-def after_request(request: Request, response: HTTPResponse):
+async def after_request(request: Request, response: HTTPResponse):
+    for job in request.ctx.jobs:
+        await job.kill()
+
     if hasattr(request.ctx, 'started'):
         started = request.ctx.started
         response.headers.add('x-took', int((time.time() - started) * 1000))

@@ -4,7 +4,7 @@ import os
 import tarfile
 import time
 
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 import docker
 import requests
@@ -27,7 +27,7 @@ FILENAME_SCRIPT = 'script'
 FILENAME_STDIN = 'stdin'
 
 MAX_FILES = 10
-MAX_MEMORY = '128m'
+MAX_MEMORY = '256m'
 MAX_RESULT_LENGTH = 1 * 1024 * 1024
 MAX_STORAGE_SIZE = '256m'
 
@@ -88,6 +88,8 @@ class NotSoCode:
 
     @classmethod
     def build_base_sync(cls, base: BaseImages, **kwargs):
+        if base != BaseImages.BUILDER:
+            cls.build_base_sync(BaseImages.BUILDER)
         directory = os.path.dirname(__file__) + os.path.join(cls.dockerfiles_directory, base.value[0], base.value[1])
         return cls._build_sync(directory, tag=base.tag)
 
@@ -141,7 +143,6 @@ class NotSoCode:
         tar_stream.seek(0)
         return tar_stream
 
-
     @classmethod
     @asyncify()
     def build_and_test(cls, language_: Languages, version: Optional[str] = None) -> bool:
@@ -156,18 +157,17 @@ class NotSoCode:
         with open(filepath, 'r') as f:
             code = f.read()
 
-        cls.build_sync(language_, version=version, base=BaseImages.BUSTER)
-        result = cls.execute_sync(language_, code, version=version)
+        job = cls.create_job_sync(language_, code, version=version)
+        result = job.execute_sync()
         return result['result']['output'] == 'OK'
 
     @classmethod
     @asyncify()
-    def execute(cls, *args, **kwargs):
-        return cls.execute_sync(*args, **kwargs)
+    def create_job(cls, *args, **kwargs):
+        return cls.create_job_sync(*args, **kwargs)
 
-    # stdin https://github.com/docker/docker-py/issues/3057#issuecomment-1290140396
     @classmethod
-    def execute_sync(
+    def create_job_sync(
         cls,
         language: Languages,
         code: str,
@@ -175,8 +175,7 @@ class NotSoCode:
         files: list[dict] = [],
         max_memory: Union[int, str] = MAX_MEMORY,
         stdin: str = '',
-        timeout: int = 10,
-    ) -> dict:
+    ):
         now = time.time()
         tar_stream = cls.create_tar(
             files=[
@@ -187,10 +186,12 @@ class NotSoCode:
             directories=[DIRECTORY_INPUT, DIRECTORY_OUTPUT],
         )
 
-        cls.build_sync(language, version=version, base=BaseImages.BUSTER)
+        cls.build_sync(language, version=version, base=BaseImages.BUSTER_SLIM)
         tag = cls.generate_tag(language, version=version)
 
         client = cls.get_client()
+
+        job = Job(None, language, version=version or language.default_version)
         try:
             # todo: add memory and storage limits, then limit cpu
             container = client.containers.create(
@@ -207,7 +208,7 @@ class NotSoCode:
                 log_config=docker.types.LogConfig(config={
                     'max-size': str(MAX_RESULT_LENGTH * 2),
                 }),
-                mem_limit=MAX_MEMORY,
+                mem_limit=max_memory,
                 #mounts=[
                 #    docker.types.Mount(
                 #        target='/home',
@@ -237,23 +238,76 @@ class NotSoCode:
             tar_stream.seek(0)
             container.put_archive(DIRECTORY_HOME, tar_stream)
 
-            container.start()
+            job.container = container
+        except:
+            job.container = None
+
+        print('done creation', int((time.time() - now) * 1000), flush=True)
+        return job
+
+    @classmethod
+    @asyncify()
+    def execute(cls, *args, **kwargs):
+        return cls.execute_sync(*args, **kwargs)
+
+    @classmethod
+    def execute_sync(cls, *args, **kwargs):
+        job = cls.create_job_sync(*args, **kwargs)
+        return job.execute_sync()
+
+
+class Job:
+    def __init__(
+        cls,
+        container: Any,
+        language: Languages,
+        version: str,
+    ):
+        cls.container = container
+        cls.language = language
+        cls.version = version
+
+    @asyncify()
+    def kill(self):
+        self.kill_sync()
+
+    @asyncify()
+    def execute(self, timeout: int = 10):
+        return self.execute_sync(timeout)
+
+    def kill_sync(self):
+        if not self.container:
+            return
+        try:
+            self.container.remove(force=True)
+        except:
+            pass
+        self.container = None
+
+    def execute_sync(self, timeout: int = 10):
+        if not self.container:
+            raise Exception('Container is killed')
+
+        now = time.time()
+
+        try:
+            self.container.start()
 
             try:
-                container.wait(timeout=timeout)
+                self.container.wait(timeout=timeout)
             except requests.exceptions.ConnectionError:
-                print(container.logs(stdout=True, stderr=False), flush=True)
-                print(container.logs(stdout=False, stderr=True), flush=True)
+                print(self.container.logs(stdout=True, stderr=False), flush=True)
+                print(self.container.logs(stdout=False, stderr=True), flush=True)
                 raise ValueError(f'Code Execution took longer than {timeout} seconds')
 
             print('done execution', int((time.time() - now) * 1000), flush=True)
 
-            output = container.logs(stdout=True, stderr=False)
-            error = container.logs(stdout=False, stderr=True)
+            output = self.container.logs(stdout=True, stderr=False)
+            error = self.container.logs(stdout=False, stderr=True)
 
             files_output: list[str] = []
             try:
-                bits, stat = container.get_archive(DIRECTORY_HOME_OUTPUT)
+                bits, stat = self.container.get_archive(DIRECTORY_HOME_OUTPUT)
                 print(stat, flush=True)
 
                 tar_stream = io.BytesIO()
@@ -274,17 +328,17 @@ class NotSoCode:
                 pass
         finally:
             try:
-                container.remove()
+                self.container.remove()
             except:
                 pass
 
         return {
-            'language': language.language,
+            'language': self.language.language,
             'result': {
                 'error': error.decode().strip()[:MAX_RESULT_LENGTH],
                 'files': files_output,
                 'output': output.decode().strip()[:MAX_RESULT_LENGTH],
             },
             'took': int((time.time() - now) * 1000),
-            'version': version or language.default_version,
+            'version': self.version,
         }

@@ -1,6 +1,6 @@
 FROM base-builder as builder
 
-FROM debian:buster-20230208
+FROM debian:buster-20230208-slim
 
 COPY --from=builder /tmp/ffmpeg/ffmpeg /usr/local/bin
 COPY --from=builder /tmp/ffmpeg/ffprobe /usr/local/bin

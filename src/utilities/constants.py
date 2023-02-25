@@ -30,7 +30,9 @@ class Enumerable(Enum):
 
 
 class BaseImages(Enumerable):
+    BUILDER = ('base', 'builder')
     BUSTER = ('base', 'buster')
+    BUSTER_SLIM = ('base', 'buster-slim')
 
     @property
     def tag(self):
@@ -39,6 +41,8 @@ class BaseImages(Enumerable):
 
 class Languages(Enumerable):
     BASH = ('bash', ('5.2.15',), None, 'sh')
+    DENO = ('deno', ('1.31.0',), None, 'ts')
+    GOLANG = ('golang', ('1.20.1',), None, 'go')
     LUA = ('lua', ('5.4.4',), None, 'lua')
     NODE = ('node', ('19.7.0',), None, 'js')
     PYTHON = ('python', ('2.7.18', '3.9.16', '3.11.2'), '3.9.16', 'py')

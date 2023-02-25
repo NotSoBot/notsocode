@@ -38,20 +38,27 @@ async def execute_script(request: Request, params=Execute):
             file_['filename'] = filename_new
         file_counter[filename] = count
 
-    result = await NotSoCode.execute(
+    job = await NotSoCode.create_job(
         params.language,
         params.code,
         version=params.version,
         files=files,
         stdin=params.stdin,
     )
+    request.ctx.jobs.add(job)
+    result = await job.execute()
+    request.ctx.jobs.remove(job)
     return json(result)
 
 
 @execute.post('/test')
 async def execute_script_test(request: Request):
     # todo: get files from request.storage
-    await NotSoCode.execute(Languages.BASH, 'echo "OK"')
+    job = await NotSoCode.create_job(Languages.BASH, 'echo "OK"')
+    request.ctx.jobs.add(job)
+    await job.execute()
+    request.ctx.jobs.remove(job)
+
     futures = []
     for i in range(200):
         future = NotSoCode.execute(Languages.BASH, 'echo "OK"')
