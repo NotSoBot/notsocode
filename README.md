@@ -20,6 +20,7 @@ from notsocode import Languages, NotSoCode
 async def test():
   job = await NotSoCode.create_job(Languages.PYTHON, 'print("OK")')
   response = await job.execute(timeout=10)
+  # output is {language: {language-object}, result: {error, files, output}, version}
   print(response['result'])
 
 
