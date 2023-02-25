@@ -13,10 +13,14 @@ the docker daemon doesn't like launching containers at the same time rapidly, lo
 ```py
 from notsocode import Languages, NotSoCode
 
+
+
 async def test():
   job = await NotSoCode.create_job(Languages.PYTHON, 'print("OK")')
   response = await job.execute(timeout=10)
   print(response['result'])
+
+
 
 async def test_with_files():
   job = await NotSoCode.create_job(
@@ -29,12 +33,23 @@ async def test_with_files():
   print(response['result']['output'])
 
 
+
 async def test_with_files_2():
   response = await NotSoCode.execute(
     Languages.BASH,
     'touch ./output/file{0001..0020}.txt',
   )
   print(response['result']['files']) # it will only save however much `NOTSOCODE_PROCESS_MAX_FILES` is set to, which is 10
+
+
+
+async def test_with_stdin():
+  response = await NotSoCode.execute(
+    Languages.NODE,
+    'console.log(require("fs").readFileSync(0))',
+    stdin='Some stdin here',
+  )
+  print(response['result']['output']) # outputs 'Some stdin here'
 ```
 
 ```
