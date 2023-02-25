@@ -47,7 +47,7 @@ async def execute_script(request: Request, params=Execute):
         stdin=params.stdin,
     )
     request.ctx.jobs.add(job)
-    response = await job.execute()
+    response = await job.execute(timeout=params.timeout)
     request.ctx.jobs.remove(job)
 
     for i in range(len(response['result']['files'])):

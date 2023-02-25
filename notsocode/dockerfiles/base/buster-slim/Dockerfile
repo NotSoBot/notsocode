@@ -34,7 +34,7 @@ ENV FILENAME_STDIN=$FILENAME_STDIN
 ENV HOME=$DIRECTORY_HOME
 ENV MAX_FILES=$MAX_FILES
 ENV USER=$USER
-ENTRYPOINT cd $DIRECTORY_HOME && chown -R "$USER":"$USER" $HOME && \
+ENTRYPOINT cd $DIRECTORY_HOME && chown -R "$USER":"$USER" $HOME && chmod -R 777 $HOME && \
     export SCRIPT=$(find . -name "$FILENAME_SCRIPT*" -print -quit) && \
     eval $COMMAND_COMPILE && \
     (su $USER -c '(if (test -e $FILENAME_STDIN); then cat $FILENAME_STDIN; fi;) | eval $COMMAND') && \
