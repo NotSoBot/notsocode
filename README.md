@@ -20,6 +20,7 @@ from notsocode import Languages, NotSoCode
 async def test():
   job = await NotSoCode.create_job(Languages.PYTHON, 'print("OK")')
   response = await job.execute(timeout=10)
+  # output is {language: {language-object}, result: {error, files, output}, version}
   print(response['result'])
 
 
@@ -41,6 +42,7 @@ async def test_with_files_2():
     Languages.BASH,
     'touch ./output/file{0001..0020}.txt',
   )
+  # output will be [{'buffer', 'filename'}]
   print(response['result']['files']) # it will only save however much `NOTSOCODE_PROCESS_MAX_FILES` is set to, which is 10
 
 
