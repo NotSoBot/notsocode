@@ -9,8 +9,8 @@ from typing import Any, Optional, Union
 import docker
 import requests
 
-from utilities.constants import BaseImages, Languages
-from utilities.wrappers import asyncify
+from notsocode.utilities.constants import BaseImages, Languages
+from notsocode.utilities.wrappers import asyncify
 
 
 

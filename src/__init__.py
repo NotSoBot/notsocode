@@ -1,5 +1,6 @@
+from notsocode.utilities.constants import BaseImages, Languages
+
 from .notsocode import Job, NotSoCode
-from .utilities.constants import BaseImages, Languages
 
 __all__ = (
     'BaseImages',
