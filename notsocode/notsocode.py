@@ -105,6 +105,8 @@ class NotSoCode:
             'BASE_IMAGE': base.tag if base else BaseImages.BUSTER.tag,
             'DIRECTORY_HOME': DIRECTORY_HOME,
             'DIRECTORY_OUTPUT': DIRECTORY_HOME_OUTPUT,
+            'FILENAME_SCRIPT': FILENAME_SCRIPT,
+            'FILENAME_STDIN': FILENAME_STDIN,
             'MAX_FILES': str(MAX_FILES),
             'USER': USER,
             'USER_UID': USER_UID,
@@ -176,6 +178,8 @@ class NotSoCode:
         files: list[dict] = [],
         max_memory: Union[int, str] = MAX_MEMORY,
         stdin: str = '',
+        *args,
+        **kwargs,
     ):
         now = time.time()
         tar_stream = cls.create_tar(
@@ -254,7 +258,7 @@ class NotSoCode:
     @classmethod
     def execute_sync(cls, *args, **kwargs):
         job = cls.create_job_sync(*args, **kwargs)
-        return job.execute_sync()
+        return job.execute_sync(*args, **kwargs)
 
 
 class Job:
@@ -273,7 +277,7 @@ class Job:
         self.kill_sync()
 
     @asyncify()
-    def execute(self, timeout: int = 10):
+    def execute(self, timeout: int = 10, *args, **kwargs):
         return self.execute_sync(timeout)
 
     def kill_sync(self):
@@ -285,7 +289,13 @@ class Job:
             pass
         self.container = None
 
-    def execute_sync(self, timeout: int = 10):
+    def execute_sync(
+        self,
+        timeout: int = 10,
+        max_file_size_total: int = ULIMIT_FILE_SIZE,
+        *args,
+        **kwargs,
+    ):
         if not self.container:
             raise Exception('Container is killed')
 
@@ -319,16 +329,26 @@ class Job:
                 tar = tarfile.open(fileobj=tar_stream, mode='r')
 
                 # todo: output the files correctly
+
+                file_size_total = 0
                 for member in tar.getmembers():
                     if not member.isfile():
                         continue
 
+                    if max_file_size_total < file_size_total + member.size:
+                        break
+
                     member_stream = tar.extractfile(member)
                     buffer = member_stream.read() if member_stream else b''
+                    size = len(buffer)
+                    if max_file_size_total < file_size_total + size:
+                        break
+
+                    max_file_size_total += size
                     files_output.append({
                         'buffer': buffer,
                         'filename': member.name.split('/')[-1],
-                        'size': len(buffer),
+                        'size': size,
                     })
             except:
                 # incase they delete the output folder
