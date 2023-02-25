@@ -6,9 +6,9 @@ from sanic import Blueprint, Request
 from sanic.response import json
 from sanic_dantic import parse_params
 
-from notsocode import NotSoCode
-from utilities.constants import Languages
-from validators.models.execute import Execute
+from notsocode import Languages, NotSoCode
+
+from ..validators.models.execute import Execute
 
 
 
