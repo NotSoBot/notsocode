@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import time
 
 from sanic import Blueprint, Request
@@ -46,9 +47,18 @@ async def execute_script(request: Request, params=Execute):
         stdin=params.stdin,
     )
     request.ctx.jobs.add(job)
-    result = await job.execute()
+    response = await job.execute()
     request.ctx.jobs.remove(job)
-    return json(result)
+
+    for i in range(len(response['result']['files'])):
+        file_ = response['result']['files'][i]
+        response['result']['files'][i] = {
+            'filename': file_['filename'],
+            'size': file_['size'],
+            'value': base64.b64encode(file_['buffer']).decode(),
+        }
+
+    return json(response)
 
 
 @execute.post('/test')

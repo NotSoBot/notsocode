@@ -306,7 +306,7 @@ class Job:
             output = self.container.logs(stdout=True, stderr=False)
             error = self.container.logs(stdout=False, stderr=True)
 
-            files_output: list[str] = []
+            files_output: list[dict] = []
             try:
                 bits, stat = self.container.get_archive(DIRECTORY_HOME_OUTPUT)
                 print(stat, flush=True)
@@ -322,8 +322,14 @@ class Job:
                 for member in tar.getmembers():
                     if not member.isfile():
                         continue
-                    files_output.append(member.name.split('/')[-1])
-                    print(member, flush=True)
+
+                    member_stream = tar.extractfile(member)
+                    buffer = member_stream.read() if member_stream else b''
+                    files_output.append({
+                        'buffer': buffer,
+                        'filename': member.name.split('/')[-1],
+                        'size': len(buffer),
+                    })
             except:
                 # incase they delete the output folder
                 pass
