@@ -42,12 +42,17 @@ class BaseImages(Enumerable):
 class Languages(Enumerable):
     BASH = ('bash', ('5.2.15',), None, 'sh')
     DENO = ('deno', ('1.31.0',), None, 'ts')
+    EMOJI = ('emojicode', ('1.0.2',), None, 'emojic')
     GOLANG = ('golang', ('1.20.1',), None, 'go')
     LUA = ('lua', ('5.4.4',), None, 'lua')
     NODE = ('node', ('19.7.0',), None, 'js')
+    PHP = ('php', ('8.2.3',), None, 'php')
     PYTHON = ('python', ('2.7.18', '3.9.16', '3.11.2'), '3.9.16', 'py')
     PYTHON_2 = ('python', ('2.7.18',), None, 'py')
+    RUBY = ('ruby', ('3.2.1',), None, 'rb')
     RUST = ('rust', ('1.67.1',), None, 'rs')
+    SWIFT = ('swift', ('5.6.3',), None, 'swift')
+    TYPESCRIPT = ('typescript', ('4.9.5', '5.0.0'), None, 'ts')
 
     @property
     def default_version(self):

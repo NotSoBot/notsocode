@@ -109,7 +109,8 @@ class NotSoCode:
             'USER': os.getenv('NOTSOCODE_USER', DEFAULT_USER),
             'USER_UID': os.getenv('NOTSOCODE_USER_UID', DEFAULT_USER_UID),
         }
-
+ 
+        print(f'Building {tag}.', flush=True)
         client = cls.get_api_client()
         lines = [
             json.loads(x) for x in client.build(path=directory, tag=tag, forcerm=True, **kwargs)

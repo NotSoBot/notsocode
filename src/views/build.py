@@ -25,6 +25,7 @@ async def build_single(request: Request, params=BuildSingle):
 @build.post('/all')
 async def build_all(request: Request):
     # todo: maybe use asyncio.gather? it'll hammer the cpu tho
+    request.app.purge_tasks()
     try:
         task = request.app.get_task('build-all')
         return json({'task': 'pending'})
@@ -35,6 +36,7 @@ async def build_all(request: Request):
 
 @build.get('/all')
 async def build_all_results(request: Request):
+    request.app.purge_tasks()
     try:
         task = request.app.get_task('build-all')
         if task:
