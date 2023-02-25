@@ -35,4 +35,4 @@ setup_kwargs = {
     },
 }
 
-setup(**kwargs)
+setup(**setup_kwargs)
