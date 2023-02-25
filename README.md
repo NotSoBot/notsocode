@@ -10,6 +10,8 @@ the docker daemon doesn't like launching containers at the same time rapidly, lo
 
 
 # examples
+
+by default, `execute` and `create_job` will try to build the images if the image isnt built already, will change in the future probably to error out if the image isn't built already (using `NotSoCode.build(Languages, version=)`)
 ```py
 from notsocode import Languages, NotSoCode
 
