@@ -12,6 +12,7 @@ server_requires = [
     'sanic==22.12.0',
     'sanic_dantic @ git+https://github.com/notsobot/nsb.api.sanic-dantic.git@all-parameter',
     'pydantic==1.10.5',
+    'python-dotenv==0.21.1',
 ]
 
 setup_kwargs = {
