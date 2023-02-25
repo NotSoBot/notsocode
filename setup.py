@@ -27,7 +27,7 @@ setup_kwargs = {
     ),
     'platforms': 'any',
     'install_requires': install_requires,
-    'extra_requires': {
+    'extras_require': {
         'server': server_requires,
     },
     'entry_points': {
