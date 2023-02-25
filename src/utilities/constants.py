@@ -41,6 +41,8 @@ class BaseImages(Enumerable):
 
 class Languages(Enumerable):
     BASH = ('bash', ('5.2.15',), None, 'sh')
+    COW = ('cow', ('1.0.0',), None, 'cow')
+    DART = ('dart', ('2.19.2',), None, 'dart')
     DENO = ('deno', ('1.31.0',), None, 'ts')
     EMOJI = ('emojicode', ('1.0.2',), None, 'emojic')
     GOLANG = ('golang', ('1.20.1',), None, 'go')
