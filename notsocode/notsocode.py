@@ -14,27 +14,27 @@ from notsocode.utilities.wrappers import asyncify
 
 
 
-DEFAULT_USER = 'notsocoder'
-DEFAULT_USER_UID = '42069'
+USER = os.getenv('NOTSOCODE_USER', 'notsocoder')
+USER_UID = os.getenv('NOTSOCODE_USER_UID', '42069')
 
 DIRECTORY_INPUT = '/input'
 DIRECTORY_OUTPUT = '/output'
 
-DIRECTORY_HOME = '/home/notsocoder'
+DIRECTORY_HOME = f'/home/{USER}'
 DIRECTORY_HOME_INPUT = DIRECTORY_HOME + DIRECTORY_INPUT
 DIRECTORY_HOME_OUTPUT = DIRECTORY_HOME + DIRECTORY_OUTPUT
-FILENAME_SCRIPT = 'script'
-FILENAME_STDIN = 'stdin'
+FILENAME_SCRIPT = os.getenv('NOTSOCODE_SCRIPT_FILE', 'script')
+FILENAME_STDIN = os.getenv('NOTSOCODE_STDIN_FILE', 'stdin')
 
-MAX_FILES = 10
-MAX_MEMORY = '256m'
+MAX_FILES = int(os.getenv('NOTSOCODE_PROCESS_MAX_FILES', 10))
+MAX_MEMORY = os.getenv('NOTSOCODE_PROCESS_MAX_MEMORY', '256m')
 MAX_RESULT_LENGTH = 1 * 1024 * 1024
 MAX_STORAGE_SIZE = '256m'
 
-ULIMIT_FILE_SIZE = 100 * 1024 * 1024
-ULIMIT_FILES = 2048
+ULIMIT_FILE_SIZE = int(os.getenv('NOTSOCODE_PROCESS_ULIMIT_FILE_SIZE', 100 * 1024 * 1024))
+ULIMIT_FILES = int(os.getenv('NOTSOCODE_PROCESS_ULIMIT_FILES', 2048))
 ULIMIT_MEMORY = 128 * 1024 * 1024
-ULIMIT_PROCESSES = 128
+ULIMIT_PROCESSES = int(os.getenv('NOTSOCODE_PROCESS_ULIMIT_PROCESSES', 128))
 
 
 class NotSoCode:
@@ -43,7 +43,7 @@ class NotSoCode:
     client = None
     client_api = None
     dockerfiles_directory = '/dockerfiles'
-    tag_prepend = 'notsocode'
+    tag_prepend = os.getenv('NOTSOCODE_DOCKER_TAG_PREPEND', 'notsocode')
 
     @classmethod
     def generate_tag(cls, language_: Languages, version: Optional[str] = None):
@@ -106,8 +106,8 @@ class NotSoCode:
             'DIRECTORY_HOME': DIRECTORY_HOME,
             'DIRECTORY_OUTPUT': DIRECTORY_HOME_OUTPUT,
             'MAX_FILES': str(MAX_FILES),
-            'USER': os.getenv('NOTSOCODE_USER', DEFAULT_USER),
-            'USER_UID': os.getenv('NOTSOCODE_USER_UID', DEFAULT_USER_UID),
+            'USER': USER,
+            'USER_UID': USER_UID,
         }
  
         print(f'Building {tag}.', flush=True)
