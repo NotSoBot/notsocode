@@ -82,5 +82,8 @@ async def catch_all_validation_exceptions(request: Request, exception: Validatio
 
 
 
-if __name__ == '__main__':
+def start():
     app.run(host='0.0.0.0', port=8080, debug=True)#, single_process=True)
+
+if __name__ == '__main__':
+    start()

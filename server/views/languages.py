@@ -1,7 +1,7 @@
 from sanic import Blueprint, Request
 from sanic.response import json
 
-from utilities.constants import Languages
+from notsocode.constants import Languages
 
 
 

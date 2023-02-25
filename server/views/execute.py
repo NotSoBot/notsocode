@@ -7,7 +7,8 @@ from sanic.response import json
 from sanic_dantic import parse_params
 
 from notsocode import NotSoCode
-from utilities.constants import Languages
+from notsocode.constants import Languages
+
 from validators.models.execute import Execute
 
 
