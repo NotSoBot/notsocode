@@ -41,6 +41,7 @@ async def test_with_files_2():
     Languages.BASH,
     'touch ./output/file{0001..0020}.txt',
   )
+  # output will be [{'buffer', 'filename'}]
   print(response['result']['files']) # it will only save however much `NOTSOCODE_PROCESS_MAX_FILES` is set to, which is 10
 
 
