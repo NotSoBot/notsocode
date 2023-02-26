@@ -45,6 +45,7 @@ class Languages(Enumerable):
     DART = ('dart', ('2.19.2',), None, 'dart')
     DENO = ('deno', ('1.31.0',), None, 'ts')
     EMOJI = ('emojicode', ('1.0.2',), None, 'emojic')
+    GOJQ = ('gojq', ('0.12.11',), None, 'jq')
     GOLANG = ('golang', ('1.20.1',), None, 'go')
     LUA = ('lua', ('5.4.4',), None, 'lua')
     NODE = ('node', ('19.7.0',), None, 'js')
