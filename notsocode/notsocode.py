@@ -198,6 +198,10 @@ class NotSoCode:
 
         job = Job(None, language, version=version or language.default_version)
         try:
+            environment: dict = {}
+            for i in range(len(files)):
+                environment[f'FILE_{i + 1}'] = DIRECTORY_INPUT + '/' + files[i]['filename']
+
             # todo: add memory and storage limits, then limit cpu
             container = client.containers.create(
                 tag,
@@ -210,6 +214,7 @@ class NotSoCode:
                 detach=True,
                 # device read/write limits
                 #kernel_memory=1,
+                environment=environment,
                 log_config=docker.types.LogConfig(config={
                     'max-size': str(MAX_RESULT_LENGTH * 2),
                 }),
