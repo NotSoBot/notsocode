@@ -200,7 +200,7 @@ class NotSoCode:
         try:
             environment: dict = {}
             for i in range(len(files)):
-                environment[f'FILE_{i + 1}'] = DIRECTORY_INPUT + '/' + files[i]['filename']
+                environment[f'FILE_{i + 1}'] = DIRECTORY_HOME_INPUT + '/' + files[i]['filename']
 
             # todo: add memory and storage limits, then limit cpu
             container = client.containers.create(
