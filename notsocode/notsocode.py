@@ -365,7 +365,7 @@ class Job:
                 pass
 
         return {
-            'language': self.language.language,
+            'language': self.language.to_dict(),
             'result': {
                 'error': error.decode().strip()[:MAX_RESULT_LENGTH],
                 'files': files_output,
