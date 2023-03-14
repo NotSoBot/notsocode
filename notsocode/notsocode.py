@@ -9,7 +9,7 @@ from typing import Any, Optional, Union
 import docker
 import requests
 
-from notsocode.utilities.constants import BaseImages, Languages
+from notsocode.utilities.constants import BaseImages, Languages, LanguagePrepends
 from notsocode.utilities.wrappers import asyncify
 
 
@@ -156,11 +156,11 @@ class NotSoCode:
         extension = language_.extension
         version = version or language_.default_version
 
-        directory = =  os.path.dirname(__file__) + os.path.join(cls.dockerfiles_directory, language, version or '')
+        directory = os.path.dirname(__file__) + os.path.join(cls.dockerfiles_directory, language, version or '')
         filepath = os.path.join(directory, f'test.{extension}')
         if not os.path.exists(filepath):
             for filename in os.listdir(directory):
-                if filename.startswith('test.') and filename.endswith(f'.{extension}')
+                if filename.startswith('test.') and filename.endswith(f'.{extension}'):
                     filepath = os.path.join(directory, filename)
                     break
 
@@ -191,6 +191,9 @@ class NotSoCode:
         *args,
         **kwargs,
     ):
+        if language in LanguagePrepends:
+            code = LanguagePrepends[language] + code
+
         now = time.time()
         tar_stream = cls.create_tar(
             files=[

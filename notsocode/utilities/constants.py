@@ -45,7 +45,9 @@ class Languages(Enumerable):
     COW = ('cow', ('1.0.0',), None, 'cow')
     DART = ('dart', ('2.19.2',), None, 'dart')
     DENO = ('deno', ('1.31.0',), None, 'ts')
+    ELIXIR = ('elixir', ('1.14.3',), None, 'exs')
     EMOJI = ('emojicode', ('1.0.2',), None, 'emojic')
+    ERLANG = ('erlang', ('25.3.0',), None, 'erl')
     GOJQ = ('gojq', ('0.12.11',), None, 'jq')
     GOLANG = ('golang', ('1.20.1',), None, 'go')
     LOLCODE = ('lolcode', ('0.11.2',), None, 'lol')
@@ -86,3 +88,8 @@ class Languages(Enumerable):
             'language': self.language,
             'versions': [x for x in self.versions],
         }
+
+
+LanguagePrepends = {
+    Languages.ERLANG: '%\n',
+}
