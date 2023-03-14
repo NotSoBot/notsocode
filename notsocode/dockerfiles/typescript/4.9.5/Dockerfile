@@ -14,5 +14,5 @@ RUN npm install -g -y jssoup@0.0.15 mathjs@11.6.0
 RUN npm install -g -y imagescript@1.2.16 sharp@0.31.3
 #RUN npm install -g -y @ffmpeg/ffmpeg@0.11.6 @ffmpeg/core@0.11.0
 
-ENV COMMAND_COMPILE='export NODE_PATH=$(npm root --quiet -g) && tsc $SCRIPT --outfile $SCRIPT.js'
-ENV COMMAND='export NODE_PATH=$(npm root --quiet -g) && node $SCRIPT.js'
+ENV COMMAND_COMPILE='export NODE_PATH=/home/lib/node_modules && tsc $SCRIPT --outfile $SCRIPT.js'
+ENV COMMAND='export NODE_PATH=/home/lib/node_modules && node $SCRIPT.js'
