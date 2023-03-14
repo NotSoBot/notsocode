@@ -91,5 +91,5 @@ class Languages(Enumerable):
 
 
 LanguagePrepends = {
-    Languages.ERLANG: '%\n',
+    Languages.ERLANG: '\n',
 }
