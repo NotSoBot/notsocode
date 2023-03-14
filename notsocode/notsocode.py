@@ -14,6 +14,8 @@ from notsocode.utilities.wrappers import asyncify
 
 
 
+DEFAULT_TIMEOUT = 15
+
 USER = os.getenv('NOTSOCODE_USER', 'notsocoder')
 USER_UID = os.getenv('NOTSOCODE_USER_UID', '42069')
 
@@ -282,7 +284,7 @@ class Job:
         self.kill_sync()
 
     @asyncify()
-    def execute(self, timeout: int = 10, *args, **kwargs):
+    def execute(self, timeout: int = DEFAULT_TIMEOUT, *args, **kwargs):
         return self.execute_sync(timeout)
 
     def kill_sync(self):

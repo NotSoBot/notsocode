@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 
 from notsocode.utilities.constants import BaseImages, Languages
 
-from .notsocode import Job, NotSoCode
+from .notsocode import DEFAULT_TIMEOUT, Job, NotSoCode
 
 
 

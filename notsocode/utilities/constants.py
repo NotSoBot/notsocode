@@ -41,6 +41,7 @@ class BaseImages(Enumerable):
 
 class Languages(Enumerable):
     BASH = ('bash', ('5.2.15',), None, 'sh')
+    BRAINFUCK = ('brainfuck', ('2.7.3',), None, 'bf')
     COW = ('cow', ('1.0.0',), None, 'cow')
     DART = ('dart', ('2.19.2',), None, 'dart')
     DENO = ('deno', ('1.31.0',), None, 'ts')

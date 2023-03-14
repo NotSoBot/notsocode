@@ -8,6 +8,19 @@ COPY --from=builder /tmp/ffmpeg/ffprobe /usr/local/bin
 
 RUN apt update && apt install -y build-essential curl git wget
 
+WORKDIR /tmp
+
+####################
+####Latest cmake####
+####################
+
+RUN wget https://github.com/Kitware/CMake/releases/download/v3.25.2/cmake-3.25.2-linux-x86_64.sh -O cmake.sh
+RUN mkdir -p /opt/cmake && sh ./cmake.sh --prefix=/opt/cmake --skip-license
+RUN ln -s /opt/cmake/bin/cmake /usr/local/bin/cmake
+RUN rm -rf ./cmake.sh
+
+WORKDIR /
+
 
 ##############
 ####Setup#####
