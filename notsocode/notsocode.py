@@ -155,7 +155,15 @@ class NotSoCode:
         language = language_.language
         extension = language_.extension
         version = version or language_.default_version
-        filepath = os.path.dirname(__file__) + os.path.join(cls.dockerfiles_directory, language, version or '', f'test.{extension}')
+
+        directory = =  os.path.dirname(__file__) + os.path.join(cls.dockerfiles_directory, language, version or '')
+        filepath = os.path.join(directory, f'test.{extension}')
+        if not os.path.exists(filepath):
+            for filename in os.listdir(directory):
+                if filename.startswith('test.') and filename.endswith(f'.{extension}')
+                    filepath = os.path.join(directory, filename)
+                    break
+
         if not os.path.exists(filepath):
             raise Exception(f'Test for {cls.generate_tag(language_, version=version)} does not exist.')
     
