@@ -1,5 +1,5 @@
 SECTION .data
-    good:	db "OK", 10
+    good:	db "Hello, World!", 10
     txtlen:	equ $ - good
 
 SECTION .text

@@ -1,3 +1,5 @@
+from typing import cast
+
 from sanic import Blueprint, Request
 from sanic.response import json
 from sanic_dantic import parse_params
@@ -14,11 +16,12 @@ build = Blueprint('build', url_prefix='/build')
 @build.post('')
 @parse_params(all=BuildSingle)
 async def build_single(request: Request, params=BuildSingle):
-    tested = await NotSoCode.build_and_test(params.language, version=params.version)
+    language = cast(Languages, params.language)
+    tested = await NotSoCode.build_and_test(language, version=params.version)
     return json({
-        'language': params.language.to_dict(),
+        'language': language.to_dict(),
         'tested': tested,
-        'version': params.version or params.language.version,
+        'version': params.version or language.default_version,
     })
 
 

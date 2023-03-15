@@ -70,6 +70,34 @@ class NotSoCode:
 
     @classmethod
     @asyncify()
+    def get_example_code(cls, language_: Languages, version: Optional[str] = None) -> str:
+        return cls.get_example_code_sync(language_, version=version)
+
+    @classmethod
+    def get_example_code_sync(cls, language_: Languages, version: Optional[str] = None) -> str:
+        extension = language_.extension
+        language = language_.language
+        extension = language_.extension
+        version = version or language_.default_version
+
+        directory = os.path.dirname(__file__) + os.path.join(cls.dockerfiles_directory, language, version or '')
+        filepath = os.path.join(directory, f'test.{extension}')
+        if not os.path.exists(filepath):
+            for filename in os.listdir(directory):
+                if filename.startswith('test.') and filename.endswith(f'.{extension}'):
+                    filepath = os.path.join(directory, filename)
+                    break
+
+        if not os.path.exists(filepath):
+            raise Exception(f'Test for {cls.generate_tag(language_, version=version)} does not exist.')
+
+        with open(filepath, 'r') as f:
+            code = f.read()
+
+        return code
+
+    @classmethod
+    @asyncify()
     def build(cls, language_: Languages, version: Optional[str] = None, **kwargs):
         return cls.build_sync(language_, version=version, **kwargs)
 
@@ -151,28 +179,10 @@ class NotSoCode:
     @classmethod
     @asyncify()
     def build_and_test(cls, language_: Languages, version: Optional[str] = None) -> bool:
-        extension = language_.extension
-        language = language_.language
-        extension = language_.extension
-        version = version or language_.default_version
-
-        directory = os.path.dirname(__file__) + os.path.join(cls.dockerfiles_directory, language, version or '')
-        filepath = os.path.join(directory, f'test.{extension}')
-        if not os.path.exists(filepath):
-            for filename in os.listdir(directory):
-                if filename.startswith('test.') and filename.endswith(f'.{extension}'):
-                    filepath = os.path.join(directory, filename)
-                    break
-
-        if not os.path.exists(filepath):
-            raise Exception(f'Test for {cls.generate_tag(language_, version=version)} does not exist.')
-    
-        with open(filepath, 'r') as f:
-            code = f.read()
-
+        code = cls.get_example_code_sync(language_, version=version)
         job = cls.create_job_sync(language_, code, version=version)
         result = job.execute_sync()
-        return result['result']['output'] == 'OK'
+        return result['result']['output'] == 'Hello, World!'
 
     @classmethod
     @asyncify()

@@ -1,1 +1,1 @@
-puts("OK")
+puts("Hello, World!")

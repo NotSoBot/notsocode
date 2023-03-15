@@ -1,2 +1,2 @@
 main(_) ->
-    io:fwrite("OK~n").
+    io:fwrite("Hello, World!~n").

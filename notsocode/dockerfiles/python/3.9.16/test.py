@@ -12,7 +12,7 @@ class cout: __lshift__ = print
 
 @execute_with(n)
 def output(n):
-    return "OK"
+    return "Hello, World!"
 
 
 cout << output
