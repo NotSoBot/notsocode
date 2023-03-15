@@ -42,6 +42,7 @@ class BaseImages(Enumerable):
 class Languages(Enumerable):
     BASH = ('bash', ('5.2.15',), None, 'sh')
     BRAINFUCK = ('brainfuck', ('2.7.3',), None, 'bf')
+    COFFEESCRIPT = ('coffeescript', ('2.7.0',), None, 'coffee')
     COW = ('cow', ('1.0.0',), None, 'cow')
     DART = ('dart', ('2.19.2',), None, 'dart')
     DENO = ('deno', ('1.31.0',), None, 'ts')
@@ -50,6 +51,7 @@ class Languages(Enumerable):
     ERLANG = ('erlang', ('25.3.0',), None, 'erl')
     GOJQ = ('gojq', ('0.12.11',), None, 'jq')
     GOLANG = ('golang', ('1.20.1',), None, 'go')
+#    GOLFSCRIPT = ('golfscript', ('1.0.0',), None, 'gs')
     LOLCODE = ('lolcode', ('0.11.2',), None, 'lol')
     LUA = ('lua', ('5.4.4',), None, 'lua')
     NASM = ('nasm', ('2.16.1',), None, 'asm')

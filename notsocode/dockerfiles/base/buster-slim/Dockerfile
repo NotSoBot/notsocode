@@ -48,7 +48,7 @@ ENV HOME=$DIRECTORY_HOME
 ENV MAX_FILES=$MAX_FILES
 ENV USER=$USER
 ENTRYPOINT cd $DIRECTORY_HOME && chown -R "$USER":"$USER" $HOME && chmod -R 777 $HOME && \
-    export SCRIPT=$(find . -name "$FILENAME_SCRIPT*" -print -quit) && \
+    export SCRIPT=$(readlink -e $(find . -type f -name "$FILENAME_SCRIPT*" -print -quit)) && \
     eval $COMMAND_COMPILE && \
     (su $USER -c '(if (test -e $FILENAME_STDIN); then cat $FILENAME_STDIN; fi;) | eval $COMMAND') && \
     (if (test -d "$DIRECTORY_OUTPUT"); then cd $DIRECTORY_OUTPUT && rm -rf -- */ && ls -1tr | head -n -$MAX_FILES | xargs -d "\n" rm -rf --; fi;)
