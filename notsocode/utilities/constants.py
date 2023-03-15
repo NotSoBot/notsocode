@@ -52,6 +52,7 @@ class Languages(Enumerable):
     GOJQ = ('gojq', ('0.12.11',), None, 'jq')
     GOLANG = ('golang', ('1.20.1',), None, 'go')
 #    GOLFSCRIPT = ('golfscript', ('1.0.0',), None, 'gs')
+    JAVA = ('java', ('17.0.6', '19.0.2'), '17.0.6', 'java')
     LOLCODE = ('lolcode', ('0.11.2',), None, 'lol')
     LUA = ('lua', ('5.4.4',), None, 'lua')
     NASM = ('nasm', ('2.16.1',), None, 'asm')
