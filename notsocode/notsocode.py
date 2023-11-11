@@ -198,6 +198,7 @@ class NotSoCode:
         files: list[dict] = [],
         max_memory: Union[int, str] = MAX_MEMORY,
         stdin: str = '',
+        allow_network: bool = True,
         *args,
         **kwargs,
     ):
@@ -220,12 +221,30 @@ class NotSoCode:
         client = cls.get_client()
 
         job = Job(None, language, version=version or language.default_version)
+
+        network = None
+        if allow_network:
+            try:
+                # add a way to prune networks using client.networks.prune(until=timestamp)
+                network = client.networks.create(f'{time.time()}')
+            except:
+                pass
+
+        network_kwargs: dict = {}
+        if network:
+            network_kwargs['network'] = network.name
+        else:
+            network_kwargs['disabled'] = True
+            network_kwargs['mode'] = 'none'
+
         try:
             environment: dict = {}
             for i in range(len(files)):
                 environment[f'FILE_{i + 1}'] = DIRECTORY_HOME_INPUT + '/' + files[i]['filename']
 
             # todo: add memory and storage limits, then limit cpu
+
+            job.network = network
             container = client.containers.create(
                 tag,
                 # cpu limits
@@ -238,6 +257,11 @@ class NotSoCode:
                 # device read/write limits
                 #kernel_memory=1,
                 environment=environment,
+                labels={
+                    'com.docker-tc.enabled': '1',
+                    'com.docker-tc.limit': '80mbps',
+                    'com.docker-tc.delay': '50ms',
+                },
                 log_config=docker.types.LogConfig(config={
                     'max-size': str(MAX_RESULT_LENGTH * 2),
                 }),
@@ -251,8 +275,10 @@ class NotSoCode:
                 #    ),
                 #],
                 #nano_cpus=1,
-                network_disabled=True,
-                network_mode='none',
+
+                #network_disabled=True,
+                #network_mode='none',
+
                 #user=os.getenv('NOTSOCODE_USER'),
                 #tmpfs={
                 #    f'{DIRECTORY_HOME}{DIRECTORY_OUTPUT}': 'size=100m',
@@ -266,6 +292,7 @@ class NotSoCode:
                     docker.types.Ulimit(name='nofile', soft=ULIMIT_FILES, hard=ULIMIT_FILES),
                     docker.types.Ulimit(name='nproc', soft=ULIMIT_PROCESSES, hard=ULIMIT_PROCESSES),
                 ],
+                **network_kwargs,
             )
 
             tar_stream.seek(0)
@@ -295,10 +322,12 @@ class Job:
         container: Any,
         language: Languages,
         version: str,
+        network: Any = None,
     ):
         cls.container = container
         cls.language = language
         cls.version = version
+        cls.network = network
 
     @asyncify()
     def kill(self):
@@ -315,7 +344,15 @@ class Job:
             self.container.remove(force=True)
         except:
             pass
+
+        if self.network:
+            try:
+                self.network.remove()
+            except:
+                pass
+
         self.container = None
+        self.network = None
 
     def execute_sync(
         self,
@@ -386,6 +423,11 @@ class Job:
                 self.container.remove()
             except:
                 pass
+            if self.network:
+                try:
+                    self.network.remove()
+                except:
+                    pass
 
         return {
             'language': self.language.to_dict(),

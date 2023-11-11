@@ -9,5 +9,6 @@ RUN cd ./build && ./configure --with-ensurepip=install && make -j$(nproc) && mak
 
 RUN python2.7 -m pip install --upgrade pip
 RUN python2.7 -m pip install numpy scipy pycrypto whoosh bcrypt passlib
+RUN python2.7 -m pip install requests urllib3
 
 ENV COMMAND='python2.7 $SCRIPT'

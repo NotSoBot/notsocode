@@ -4,7 +4,7 @@ FROM $BASE_IMAGE
 RUN apt install -y zlib1g zlib1g-dev libssl-dev
 
 WORKDIR /tmp
-RUN mkdir -p ./build && cd ./build && wget "https://www.python.org/ftp/python/3.11.2/Python-3.11.2.tgz" -q -O python.tar.gz && tar xzf python.tar.gz --strip-components=1
+RUN mkdir -p ./build && cd ./build && wget "https://www.python.org/ftp/python/3.11.6/Python-3.11.6.tgz" -q -O python.tar.gz && tar xzf python.tar.gz --strip-components=1
 RUN cd ./build && ./configure --with-ensurepip=install && make -j$(nproc) && make install -j$(nproc) && cd ../ && rm -rf ./build
 
 RUN python3.11 -m pip install --upgrade pip

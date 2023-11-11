@@ -83,6 +83,20 @@ NOTSOCODE_DOCKER_TAG_PREPEND = 'notsocode'
 DOCKER_BASE_URL = '' # incase you're running dind
 ```
 
+
+To add network capability you need docker-tc running to be able to limit outgoing bandwidth, will update with clearer docs in the future
+
+```
+docker run -d \
+    --name docker-tc \
+    --network host \
+    --cap-add NET_ADMIN \
+    --restart always \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v /var/docker-tc:/var/docker-tc \
+    keiyou/docker-tc
+```
+
 NotSoCode Server
 ```
 SECRET = '' # required, each request must have this secret in the 'authorization' header

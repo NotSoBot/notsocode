@@ -61,14 +61,14 @@ class Languages(Enumerable):
     LUA = ('lua', ('5.4.4',), None, 'lua')
     NASM = ('nasm', ('2.16.1',), None, 'asm')
     NASM_64 = ('nasm64', ('2.16.1',), None, 'asm')
-    NODE = ('node', ('19.7.0',), None, 'js')
+    NODE = ('node', ('19.7.0', '21.1.0'), '21.1.0', 'js')
     PHP = ('php', ('8.2.3',), None, 'php')
-    PYTHON = ('python', ('2.7.18', '3.9.16', '3.11.2'), '3.9.16', 'py')
+    PYTHON = ('python', ('2.7.18', '3.9.16', '3.11.6', '3.12.0'), '3.11.6', 'py')
     PYTHON_2 = ('python', ('2.7.18',), None, 'py')
     RUBY = ('ruby', ('3.2.1',), None, 'rb')
     RUST = ('rust', ('1.67.1',), None, 'rs')
     SWIFT = ('swift', ('5.6.3',), None, 'swift')
-    TYPESCRIPT = ('typescript', ('4.9.5', '5.0.0'), None, 'ts')
+    TYPESCRIPT = ('typescript', ('4.9.5', '5.0.0', '5.2.2'), '5.2.2', 'ts')
 
     @property
     def default_version(self):
