@@ -30,6 +30,8 @@ class Enumerable(Enum):
 
 
 class BaseImages(Enumerable):
+    BOOKWORM = ('base', 'bookworm')
+    BOOKWORM_SLIM = ('base', 'bookworm-slim')
     BUILDER = ('base', 'builder')
     BUSTER = ('base', 'buster')
     BUSTER_SLIM = ('base', 'buster-slim')

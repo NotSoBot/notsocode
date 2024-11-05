@@ -15,5 +15,5 @@ RUN npm install -g -y imagescript@1.2.16 sharp@0.32.6
 RUN npm install -g -y node-fetch@2.7.0 undici@5.27.2
 #RUN npm install -g -y @ffmpeg/ffmpeg@0.11.6 @ffmpeg/core@0.11.0
 
-ENV COMMAND_COMPILE='export NODE_PATH=/home/lib/node_modules && tsc $SCRIPT --outfile $SCRIPT.js'
-ENV COMMAND='export NODE_PATH=/home/lib/node_modules && node $SCRIPT.js'
+ENV COMMAND_COMPILE='export NODE_PATH=/home/lib/node_modules && tsc $SCRIPT --outdir dist'
+ENV COMMAND='export NODE_PATH=/home/lib/node_modules && node ./dist/$FILENAME_SCRIPT.js'

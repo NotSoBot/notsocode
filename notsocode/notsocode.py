@@ -132,7 +132,7 @@ class NotSoCode:
 
         cls.BUILD_STATUS[tag] = False
         kwargs['buildargs'] = {
-            'BASE_IMAGE': base.tag if base else BaseImages.BUSTER.tag,
+            'BASE_IMAGE': base.tag if base else BaseImages.BOOKWORM_SLIM.tag,
             'DIRECTORY_HOME': DIRECTORY_HOME,
             'DIRECTORY_OUTPUT': DIRECTORY_HOME_OUTPUT,
             'FILENAME_SCRIPT': FILENAME_SCRIPT,
@@ -215,7 +215,7 @@ class NotSoCode:
             directories=[DIRECTORY_INPUT, DIRECTORY_OUTPUT],
         )
 
-        cls.build_sync(language, version=version, base=BaseImages.BUSTER_SLIM)
+        cls.build_sync(language, version=version, base=BaseImages.BOOKWORM_SLIM)
         tag = cls.generate_tag(language, version=version)
 
         client = cls.get_client()
@@ -227,8 +227,8 @@ class NotSoCode:
             try:
                 # add a way to prune networks using client.networks.prune(until=timestamp)
                 network = client.networks.create(f'{time.time()}')
-            except:
-                pass
+            except Exception as error:
+                print('error creating network', str(error))
 
         network_kwargs: dict = {}
         if network:
@@ -259,7 +259,7 @@ class NotSoCode:
                 environment=environment,
                 labels={
                     'com.docker-tc.enabled': '1',
-                    'com.docker-tc.limit': '80mbps',
+                    'com.docker-tc.limit': '20mbps',
                     'com.docker-tc.delay': '50ms',
                 },
                 log_config=docker.types.LogConfig(config={
@@ -299,10 +299,11 @@ class NotSoCode:
             container.put_archive(DIRECTORY_HOME, tar_stream)
 
             job.container = container
-        except:
+        except Exception as error:
+            print('error creating container', str(error))
             job.container = None
 
-        print('done creation', int((time.time() - now) * 1000), flush=True)
+        print('done creation', job.language, job.version, int((time.time() - now) * 1000), flush=True)
         return job
 
     @classmethod
@@ -372,11 +373,12 @@ class Job:
             try:
                 self.container.wait(timeout=timeout)
             except requests.exceptions.ConnectionError:
+                print('error', self.language, self.version, flush=True)
                 print(self.container.logs(stdout=True, stderr=False), flush=True)
                 print(self.container.logs(stdout=False, stderr=True), flush=True)
                 raise ValueError(f'Code Execution took longer than {timeout} seconds')
 
-            print('done execution', int((time.time() - now) * 1000), flush=True)
+            print('done execution', self.language, self.version, int((time.time() - now) * 1000), flush=True)
 
             output = self.container.logs(stdout=True, stderr=False)
             error = self.container.logs(stdout=False, stderr=True)

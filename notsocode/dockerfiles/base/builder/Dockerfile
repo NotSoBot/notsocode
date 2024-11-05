@@ -1,4 +1,4 @@
-FROM debian:buster-20230208-slim
+FROM debian:bookworm-20231030-slim
 
 RUN apt update && apt install -y wget xz-utils
 
