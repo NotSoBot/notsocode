@@ -1,7 +1,7 @@
 ARG BASE_IMAGE=base-buster
 FROM $BASE_IMAGE
 
-RUN apt install -y gdc
+RUN apt update -y && apt install -y gdc
 
 WORKDIR /tmp
 RUN mkdir -p build && cd ./build && wget "https://ftp.gnu.org/gnu/gcc/gcc-12.2.0/gcc-12.2.0.tar.gz" -q -O gcc.tar.gz && tar xvfz gcc.tar.gz --strip-components=1

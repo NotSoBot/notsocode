@@ -9,7 +9,7 @@ FROM $BASE_IMAGE
 #RUN apt install -y binutils git gnupg2 libc6-dev libcurl4 libedit2 libgcc-8-dev libncurses-dev libpython3.7 libsqlite3-0 libstdc++-8-dev libxml2 libz3-dev pkg-config python3 tzdata zlib1g-dev libc6
 #RUN apt install -y clang clang-13 libicu-dev lld lldb llvm llvm-dev
 
-RUN apt update && apt upgrade -y && apt install -y curl ca-certificates gnupg
+RUN apt update -y && apt upgrade -y && apt install -y curl ca-certificates gnupg
 
 #RUN curl -fsSL https://archive.swiftlang.xyz/swiftlang_repo.gpg.key | gpg --dearmor -o /usr/share/keyrings/swiftlang_repo.gpg.key
 #RUN echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/swiftlang_repo.gpg.key] https://archive.swiftlang.xyz/debian buster v5_6" | \

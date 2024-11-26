@@ -1,7 +1,7 @@
 ARG BASE_IMAGE=base-buster
 FROM $BASE_IMAGE
 
-RUN apt install -y zlib1g zlib1g-dev libssl-dev libffi-dev
+RUN apt update -y && apt install -y zlib1g zlib1g-dev libssl-dev libffi-dev
 
 WORKDIR /tmp
 RUN mkdir -p ./build && cd ./build && wget "https://www.python.org/ftp/python/3.12.0/Python-3.12.0.tgz" -q -O python.tar.gz && tar xzf python.tar.gz --strip-components=1

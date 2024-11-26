@@ -1,4 +1,4 @@
-Pillow==10.1.0
+Pillow==10.1.0 # moviepy does not support Pillow 11 (24.11.25)
 Wand==0.6.13
 ffmpeg-python==0.2.0
 
@@ -8,7 +8,9 @@ urllib3==2.1.0
 
 matplotlib==3.9.2
 beautifulsoup4==4.12.3
-yfinance==0.2.48
+yfinance==0.2.50
 pysqlite3==0.5.4
-moviepy==1.0.3
+moviepy==2.1.1
 networkx==3.4.2
+opencv-python==4.10.0.84
+primp==0.8.0

@@ -1,7 +1,7 @@
 ARG BASE_IMAGE=base-buster
 FROM $BASE_IMAGE
 
-RUN apt install -y python3
+RUN apt update -y && apt install -y python3
 
 WORKDIR /tmp
 RUN mkdir -p ./build && cd ./build && wget "https://nodejs.org/dist/v19.7.0/node-v19.7.0-linux-x64.tar.gz" -q -O node.tar.gz && tar xzf node.tar.gz --strip-components=1
