@@ -68,7 +68,7 @@ class Languages(Enumerable):
     PYTHON = ('python', ('2.7.18', '3.9.16', '3.11.6', '3.12.0'), '3.11.6', 'py')
     PYTHON_2 = ('python', ('2.7.18',), None, 'py')
     RUBY = ('ruby', ('3.2.1',), None, 'rb')
-    RUST = ('rust', ('1.67.1',), None, 'rs')
+    RUST = ('rust', ('1.67.1', '1.82.0'), '1.82.0', 'rs')
     SWIFT = ('swift', ('5.6.3',), None, 'swift')
     TYPESCRIPT = ('typescript', ('4.9.5', '5.0.0', '5.2.2'), '5.2.2', 'ts')
 
