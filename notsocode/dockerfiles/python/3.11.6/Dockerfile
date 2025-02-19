@@ -21,7 +21,7 @@ RUN python3.11 -m pip install -r requirements.txt
 ################################
 
 
-RUN apt install -y \
+RUN apt update -y && apt install -y \
 	libfribidi-dev libharfbuzz-dev \
 	libjpeg62-turbo libtiff-dev \
 	liblcms2-dev libwebp-dev \

@@ -70,6 +70,12 @@ RUN apt-get update -y && apt-get install -y \
     ldconfig
 
 
+################################
+#### BC Calculator Install #####
+################################
+
+RUN apt-get update -y && apt-get install -y bc
+
 ###############
 #####Setup#####
 ###############
