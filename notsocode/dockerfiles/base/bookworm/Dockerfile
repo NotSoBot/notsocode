@@ -1,6 +1,6 @@
 FROM base-builder as builder
 
-FROM debian:bookworm-20231030
+FROM debian:bookworm-20250721
 
 COPY --from=builder /tmp/ffmpeg/ffmpeg /usr/local/bin
 COPY --from=builder /tmp/ffmpeg/ffprobe /usr/local/bin
@@ -14,7 +14,7 @@ WORKDIR /tmp
 ####Latest cmake####
 ####################
 
-RUN wget https://github.com/Kitware/CMake/releases/download/v3.27.7/cmake-3.27.7-linux-x86_64.sh -O cmake.sh
+RUN wget https://github.com/Kitware/CMake/releases/download/v4.0.3/cmake-4.0.3-linux-x86_64.sh -O cmake.sh
 RUN mkdir -p /opt/cmake && sh ./cmake.sh --prefix=/opt/cmake --skip-license
 RUN ln -s /opt/cmake/bin/cmake /usr/local/bin/cmake
 RUN rm -rf ./cmake.sh

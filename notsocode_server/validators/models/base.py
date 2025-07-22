@@ -8,7 +8,7 @@ from ..enum import ValidLanguages
 
 class BaseModel(PydanticBaseModel):
     class Config:
-        anystr_strip_whitespace = True
+        str_strip_whitespace = True
 
 
 class BaseLanguage(BaseModel):

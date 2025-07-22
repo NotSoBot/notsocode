@@ -1,4 +1,4 @@
-FROM debian:bookworm-20241111-slim
+FROM debian:bookworm-slim
 
 RUN apt update -y && apt install -y wget xz-utils
 
@@ -11,7 +11,7 @@ WORKDIR /tmp
 
 
 RUN mkdir -p ./ffmpeg && cd ./ffmpeg && \
-    wget https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2024-11-25-13-05/ffmpeg-n7.1-36-g20c8a3f5ff-linux64-gpl-7.1.tar.xz -q -O ffmpeg.tar.xz && \
+    wget https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-linux64-gpl-7.1.tar.xz -q -O ffmpeg.tar.xz && \
     tar xf ffmpeg.tar.xz --strip-components=1
 
 
@@ -33,7 +33,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install meson
 
 # Build dav1d
-RUN wget https://code.videolan.org/videolan/dav1d/-/archive/1.2.1/dav1d-1.2.1.tar.gz -O dav1d.tar.gz && \
+RUN wget https://code.videolan.org/videolan/dav1d/-/archive/1.5.1/dav1d-1.5.1.tar.gz -O dav1d.tar.gz && \
     mkdir -p dav1d && tar xvzf dav1d.tar.gz --strip-components=1 -C dav1d && \
     cd dav1d && mkdir build && cd build && \
     meson setup .. --prefix /usr && ninja && ninja install
@@ -44,18 +44,18 @@ RUN git clone https://aomedia.googlesource.com/aom.git && \
     cmake .. && make -j$(nproc) && make install
 
 # Build libde265
-RUN wget https://github.com/strukturag/libde265/releases/download/v1.0.15/libde265-1.0.15.tar.gz -O libde265.tar.gz && \
+RUN wget https://github.com/strukturag/libde265/releases/download/v1.0.16/libde265-1.0.16.tar.gz -O libde265.tar.gz && \
     mkdir -p libde265 && tar xvzf libde265.tar.gz --strip-components=1 -C libde265 && \
     cd libde265 && mkdir build && cd build && \
     cmake .. && make -j$(nproc) && make install
 
 # Build libheif
-RUN wget https://github.com/strukturag/libheif/releases/download/v1.18.2/libheif-1.18.2.tar.gz -O libheif.tar.gz && \
+RUN wget https://github.com/strukturag/libheif/releases/download/v1.20.1/libheif-1.20.1.tar.gz -O libheif.tar.gz && \
     mkdir -p libheif && tar xvzf libheif.tar.gz --strip-components=1 -C libheif && \
     cd libheif && cmake . && make -j$(nproc) && make install
 
 # Build ImageMagick
-RUN wget https://github.com/ImageMagick/ImageMagick/archive/refs/tags/7.1.1-36.tar.gz -O ImageMagick.tar.gz && \
+RUN wget https://github.com/ImageMagick/ImageMagick/archive/refs/tags/7.1.2-0.tar.gz -O ImageMagick.tar.gz && \
     mkdir -p ImageMagick && tar xvzf ImageMagick.tar.gz --strip-components=1 -C ImageMagick && \
     cd ImageMagick && \
     ./configure --with-lqr --enable-shared --with-modules && \
@@ -74,7 +74,7 @@ RUN apt-get update && apt-get install -y \
 
 
 # Build GraphicsMagick
-RUN wget https://sourceforge.net/projects/graphicsmagick/files/graphicsmagick/1.3.43/GraphicsMagick-1.3.43.tar.xz -O GraphicsMagick.tar.gz && \
+RUN wget https://sourceforge.net/projects/graphicsmagick/files/graphicsmagick/1.3.45/GraphicsMagick-1.3.45.tar.xz -O GraphicsMagick.tar.gz && \
     mkdir -p GraphicsMagick && tar xvfJ GraphicsMagick.tar.gz --strip-components=1 -C GraphicsMagick && \
     cd GraphicsMagick && \
     ./configure --enable-shared --with-modules && \
@@ -97,3 +97,13 @@ RUN apt-get update -y && apt-get install -y \
 RUN git clone https://github.com/chirlu/sox.git
 RUN cd sox && autoreconf -i && ./configure
 RUN cd sox && make -j$(nproc) && make install -j$(nproc)
+
+
+################################
+##### frei0r dependencies ######
+################################
+
+
+RUN wget https://github.com/dyne/frei0r/archive/refs/tags/v2.3.3.tar.gz -O frei0r.tar.gz && \
+   mkdir -p frei0r && tar xvzf frei0r.tar.gz --strip-components=1 -C frei0r && \
+   cd frei0r && cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 . && make -j$(nproc) && make install

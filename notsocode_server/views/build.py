@@ -1,6 +1,7 @@
 from typing import cast
 
 from sanic import Blueprint, Request
+from sanic.exceptions import SanicException
 from sanic.response import json
 from sanic_dantic import parse_params
 
@@ -30,10 +31,12 @@ async def build_all(request: Request):
     # todo: maybe use asyncio.gather? it'll hammer the cpu tho
     request.app.purge_tasks()
     try:
-        task = request.app.get_task('build-all')
+        request.app.get_task(name='build-all', raise_exception=True)
         return json({'task': 'pending'})
     except:
         task = request.app.add_task(_build_all_task(), name='build-all')
+        if task is None:
+            raise SanicException('Failed to create task', status_code=500)
     return json({'task': 'created'})
 
 
@@ -41,7 +44,7 @@ async def build_all(request: Request):
 async def build_all_results(request: Request):
     request.app.purge_tasks()
     try:
-        task = request.app.get_task('build-all')
+        task = request.app.get_task(name='build-all', raise_exception=True)
         if task:
             await task
             return json({'results': task.result(), 'task': 'done'})

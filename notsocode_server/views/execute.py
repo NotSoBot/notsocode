@@ -19,12 +19,13 @@ execute = Blueprint('execute', url_prefix='/execute')
 @parse_params(all=Execute)
 async def execute_script(request: Request, params=Execute):
     files = []
-    for storages in request.files.values():
-        for storage in storages:
-            files.append({
-                'buffer': storage.body,
-                'filename': storage.name,
-            })
+    if request.files:
+        for storages in request.files.values():
+            for storage in storages:
+                files.append({
+                    'buffer': storage.body,
+                    'filename': storage.name,
+                })
 
     file_counter: dict[str, int] = {}
     for i in range(len(files)):

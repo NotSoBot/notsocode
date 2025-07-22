@@ -12,15 +12,15 @@ for filepath in glob('notsocode/dockerfiles/**', recursive=True):
 
 install_requires = [
     'docker==7.1.0',
-    'types-requests==2.32.0.20241016',
-    'python-dotenv==0.21.1',
+    'types-requests==2.32.4.20250611',
+    'python-dotenv==1.1.1',
 ]
 
 server_requires = [
-    'sanic==24.6.0',
+    'sanic==25.3.0',
     'sanic_dantic @ git+https://github.com/notsobot/nsb.api.sanic-dantic.git@all-parameter',
-    'pydantic==2.10.2',
-    'python-dotenv==1.0.1',
+    'pydantic==2.11.7',
+    'python-dotenv==1.1.1',
 ]
 
 setup_kwargs = {

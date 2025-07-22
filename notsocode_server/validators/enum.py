@@ -17,11 +17,11 @@ class ValidEnums:
         yield cls.validate
 
     @classmethod
-    def __modify_schema__(cls, field_schema: dict[str, object]) -> None:
+    def __get_pydantic_json_schema__(cls, field_schema: dict[str, object]) -> None:
         field_schema.update(enum=cls.__enumerable__.keys())
 
     @classmethod
-    def validate(cls, value: str) -> Any:
+    def validate(cls, value: str, _ = None) -> Any:
         try:
             return cls.__enumerable__[value]
         except:

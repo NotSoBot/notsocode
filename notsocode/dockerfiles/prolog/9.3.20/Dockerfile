@@ -15,4 +15,5 @@ RUN cd ./build && \
 		.
 RUN cd ./build && ninja && ninja install
 
-ENV COMMAND='swipl --quiet -s $SCRIPT'
+ENV COMMAND_COMPILE='echo "user:message_hook(_, warning, Lines) :- print_message_lines(user_output, \"Warning: \", Lines)." > $HOME/init.pl'
+ENV COMMAND='swipl --quiet -f $HOME/init.pl -s $SCRIPT -t "halt."'
