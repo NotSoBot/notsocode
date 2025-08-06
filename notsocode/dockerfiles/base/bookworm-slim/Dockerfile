@@ -89,6 +89,16 @@ RUN apt-get update -y && apt-get install -y \
 
 RUN apt-get update -y && apt-get install -y bc
 
+
+################################
+######## Wine Install ##########
+################################
+
+RUN dpkg --add-architecture i386 && apt-get update && \
+    apt-get install -y --no-install-recommends \
+    wine wine32:i386 wine64 && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+
 ###############
 #####Setup#####
 ###############
@@ -102,6 +112,11 @@ ARG USER_UID=42069
 RUN adduser --disabled-password  --gecos "" --home "$DIRECTORY_HOME" --uid "$USER_UID" "$USER"
 RUN mkdir -p $DIRECTORY_HOME && chown -R "$USER":"$USER" $DIRECTORY_HOME && chmod g+s $DIRECTORY_HOME
 RUN chmod -R 555 /bin
+
+ENV WINEDEBUG=-all
+ENV WINEPREFIX=$DIRECTORY_HOME/.wine
+RUN mkdir -p $WINEPREFIX && chown -R "$USER":"$USER" $WINEPREFIX && \
+    (wineboot --init 2>/dev/null || true)
 
 ARG DIRECTORY_OUTPUT=$DIRECTORY_HOME/output
 ARG FILENAME_SCRIPT=script
