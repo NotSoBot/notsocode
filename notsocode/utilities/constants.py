@@ -65,7 +65,7 @@ class Languages(Enumerable):
     NASM_64 = ('nasm64', ('2.16.1',), None, 'asm')
     NODE = ('node', ('22.18.0', '24.5.0'), '22.18.0', 'js')
     PHP = ('php', ('8.2.3',), None, 'php')
-    PROLOG = ('prolog', ('9.3.26',), None, 'pl')
+    PROLOG = ('prolog', ('9.3.36',), None, 'pl')
     PYTHON = ('python', ('2.7.18', '3.9.16', '3.11.6', '3.12.0'), '3.11.6', 'py')
     PYTHON_2 = ('python', ('2.7.18',), None, 'py')
     RUBY = ('ruby', ('3.2.1',), None, 'rb')

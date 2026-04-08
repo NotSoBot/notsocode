@@ -5,7 +5,7 @@ RUN apt update -y && apt install -y \
 	build-essential cmake ninja-build libarchive-dev libssl-dev zlib1g-dev libpcre2-dev
 
 WORKDIR /tmp
-RUN mkdir -p build && cd ./build && wget "https://www.swi-prolog.org/download/devel/src/swipl-9.3.26.tar.gz" -q -O swipl.tar.gz && tar xvfz swipl.tar.gz --strip-components=1
+RUN mkdir -p build && cd ./build && wget "https://www.swi-prolog.org/download/devel/src/swipl-9.3.36.tar.gz" -q -O swipl.tar.gz && tar xvfz swipl.tar.gz --strip-components=1
 RUN cd ./build && \
 	cmake -G Ninja \
 		-DCMAKE_BUILD_TYPE=Release \
