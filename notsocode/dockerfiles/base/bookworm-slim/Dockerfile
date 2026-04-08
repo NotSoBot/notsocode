@@ -47,8 +47,8 @@ RUN apt-get update -y && apt-get install -y \
 
 COPY --from=builder /usr/local/lib /usr/local/lib/
 COPY --from=builder /usr/local/bin /usr/local/bin/
-COPY --from=builder /usr/local/lib/GraphicsMagick-1.3.45 /usr/local/lib/GraphicsMagick-1.3.45/
-COPY --from=builder /usr/local/share/GraphicsMagick-1.3.45 /usr/local/share/GraphicsMagick-1.3.45/
+COPY --from=builder /usr/local/lib/GraphicsMagick-1.3.46 /usr/local/lib/GraphicsMagick-1.3.46/
+COPY --from=builder /usr/local/share/GraphicsMagick-1.3.46 /usr/local/share/GraphicsMagick-1.3.46/
 
 RUN apt-get update && apt-get install -y \
     libmagickwand-6.q16-6 && \
@@ -129,6 +129,7 @@ ENV COMMAND_COMPILE=''
 ENV FILENAME_SCRIPT=$FILENAME_SCRIPT
 ENV FILENAME_STDIN=$FILENAME_STDIN
 ENV HOME=$DIRECTORY_HOME
+ENV LANG=C.UTF-8
 ENV MAX_FILES=$MAX_FILES
 ENV USER=$USER
 ENTRYPOINT cd $DIRECTORY_HOME && chown -R "$USER":"$USER" $HOME && chmod -R 777 $HOME && \

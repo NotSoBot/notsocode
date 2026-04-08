@@ -1,20 +1,23 @@
 Pillow==11.3.0
-Wand==0.6.13
+Wand==0.7.0
 ffmpeg-python==0.2.0
 
-requests==2.32.4
-aiohttp==3.12.15
-urllib3==2.5.0
+requests==2.33.1
+aiohttp==3.13.5
+urllib3==2.6.3
 
-matplotlib==3.10.5
-beautifulsoup4==4.13.4
-yfinance==0.2.65
-pysqlite3==0.5.4
+matplotlib==3.10.8
+beautifulsoup4==4.14.3
+yfinance==1.2.0
+pysqlite3==0.6.0
 moviepy==2.2.1
-networkx==3.5
-opencv-python==4.12.0.88
-primp==0.15.0
+networkx==3.6.1
+opencv-python==4.13.0.92
+primp==1.2.2
 pydub==0.25.1
+torch==2.11.0
 
-redis==6.3.0
-numba==0.61.2
+redis==7.4.0
+numba==0.65.0
+
+pyyaml==6.0.3

@@ -36,8 +36,9 @@ def before_request(request: Request):
 
 @app.on_response
 async def after_request(request: Request, response: HTTPResponse):
-    for job in request.ctx.jobs:
-        await job.kill()
+    if hasattr(request.ctx, 'jobs'):
+        for job in request.ctx.jobs:
+            await job.kill()
 
     if hasattr(request.ctx, 'started'):
         started = request.ctx.started

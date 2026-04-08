@@ -4,6 +4,7 @@ import os
 import tarfile
 import time
 
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Union
 
 import docker
@@ -225,7 +226,14 @@ class NotSoCode:
         network = None
         if allow_network:
             try:
-                # add a way to prune networks using client.networks.prune(until=timestamp)
+                one_hour_ago = datetime.now(timezone.utc) - timedelta(minutes=3)
+                timestamp = one_hour_ago.strftime('%Y-%m-%dT%H:%M:%SZ')
+                result = client.networks.prune(filters={'until': timestamp})
+                print(f"Pruned {len(result['NetworksDeleted'] or [])} networks")
+            except Exception as error:
+                print('error pruning networks', str(error))
+
+            try:
                 network = client.networks.create(f'{time.time()}')
             except Exception as error:
                 print('error creating network', str(error))
@@ -341,6 +349,7 @@ class Job:
     def kill_sync(self):
         if not self.container:
             return
+
         try:
             self.container.remove(force=True)
         except:
@@ -357,7 +366,7 @@ class Job:
 
     def execute_sync(
         self,
-        timeout: int = 10,
+        timeout: int = DEFAULT_TIMEOUT,
         max_file_size_total: int = ULIMIT_FILE_SIZE,
         *args,
         **kwargs,
@@ -421,15 +430,7 @@ class Job:
                 # incase they delete the output folder
                 pass
         finally:
-            try:
-                self.container.remove()
-            except:
-                pass
-            if self.network:
-                try:
-                    self.network.remove()
-                except:
-                    pass
+            self.kill_sync()
 
         return {
             'language': self.language.to_dict(),
