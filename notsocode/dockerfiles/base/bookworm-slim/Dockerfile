@@ -12,13 +12,12 @@ WORKDIR /tmp
 
 
 ####################
-####Latest cmake####
+### Latest cmake ###
 ####################
 
-RUN wget https://github.com/Kitware/CMake/releases/download/v4.0.3/cmake-4.0.3-linux-x86_64.sh -O cmake.sh
-RUN mkdir -p /opt/cmake && sh ./cmake.sh --prefix=/opt/cmake --skip-license
-RUN ln -s /opt/cmake/bin/cmake /usr/local/bin/cmake
-RUN rm -rf ./cmake.sh
+RUN wget https://github.com/Kitware/CMake/releases/download/v4.0.3/cmake-4.0.3-linux-x86_64.sh -O cmake.sh && \
+    mkdir -p /opt/cmake && sh ./cmake.sh --prefix=/opt/cmake --skip-license
+RUN ln -s /opt/cmake/bin/cmake /usr/local/bin/cmake && rm -rf ./cmake.sh
 
 
 ################################
@@ -97,6 +96,22 @@ RUN apt-get update -y && apt-get install -y bc
 RUN dpkg --add-architecture i386 && apt-get update && \
     apt-get install -y --no-install-recommends \
     wine wine32:i386 wine64 && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+
+################################
+##### libqrencode Install ######
+################################
+
+RUN apt-get update -y && apt-get install -y \
+    autoconf automake autotools-dev libtool pkg-config libpng-dev && \
+    rm -rf /var/lib/apt/lists/* && \
+    ldconfig
+
+RUN wget https://github.com/fukuchi/libqrencode/archive/715e29fd4cd71b6e452ae0f4e36d917b43122ce8.tar.gz -O /tmp/libqrencode.tar.gz && \
+    mkdir -p /tmp/libqrencode && tar xvzf /tmp/libqrencode.tar.gz --strip-components=1 -C /tmp/libqrencode
+RUN cd /tmp/libqrencode && ./autogen.sh && ./configure && make -j$(nproc) && make install -j$(nproc) && ldconfig
+RUN rm -rf /tmp/libqrencode
+
 
 
 ###############

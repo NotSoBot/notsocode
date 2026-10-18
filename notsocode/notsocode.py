@@ -1,6 +1,7 @@
 import json
 import io
 import os
+import subprocess
 import tarfile
 import time
 
@@ -29,6 +30,10 @@ DIRECTORY_HOME_OUTPUT = DIRECTORY_HOME + DIRECTORY_OUTPUT
 FILENAME_SCRIPT = os.getenv('NOTSOCODE_SCRIPT_FILE', 'script')
 FILENAME_STDIN = os.getenv('NOTSOCODE_STDIN_FILE', 'stdin')
 
+MAX_CONNECTION_BURST  = int(os.getenv('NOTSOCODE_PROCESS_MAX_CONNECTION_BURST', 5))
+MAX_CONNECTION_RATE  = os.getenv('NOTSOCODE_PROCESS_MAX_CONNECTION_RATE', '3/sec')
+MAX_CONNECTION_SPEED = os.getenv('NOTSOCODE_PROCESS_MAX_CONNECTION_SPEED', '160mbit')
+
 MAX_FILES = int(os.getenv('NOTSOCODE_PROCESS_MAX_FILES', 10))
 MAX_MEMORY = os.getenv('NOTSOCODE_PROCESS_MAX_MEMORY', '2048m')
 MAX_RESULT_LENGTH = 1 * 1024 * 1024
@@ -40,6 +45,83 @@ ULIMIT_MEMORY = 2 * 1024 * 1024 * 1024
 ULIMIT_PROCESSES = int(os.getenv('NOTSOCODE_PROCESS_ULIMIT_PROCESSES', 512))
 
 
+# private / special-use ranges a sandboxed job should never reach
+BLOCKED_DESTS = [
+    '10.0.0.0/8',
+    '172.16.0.0/12',
+    '192.168.0.0/16',
+    '169.254.0.0/16',   # link-local — includes 169.254.169.254 cloud metadata
+    '100.64.0.0/10',    # carrier-grade NAT / some cloud internal
+]
+
+
+def _ipt(args, check=True):
+    return subprocess.run(['iptables', *args], check=check, capture_output=True, text=True)
+
+
+def _ipt_del(args):
+    subprocess.run(['iptables', '-D', 'DOCKER-USER', *args], capture_output=True, text=True)
+
+
+def _tc(args, check=True):
+    return subprocess.run(['tc', *args], check=check, capture_output=True, text=True)
+
+
+def add_egress_block_rules(subnet: str):
+    # Broad DROPs first, then a RETURN for the job's OWN subnet inserted last so it
+    # sits ABOVE the drops — otherwise -d 10.0.0.0/8 would also block the container
+    # from reaching its own gateway and embedded DNS (job subnet is inside 10/8).
+    for dest in BLOCKED_DESTS:
+        _ipt(['-I', 'DOCKER-USER', '-s', subnet, '-d', dest, '-j', 'DROP'])
+    _ipt(['-I', 'DOCKER-USER', '-s', subnet, '-d', subnet, '-j', 'RETURN'])
+
+
+def del_egress_block_rules(subnet: str):
+    _ipt_del(['-s', subnet, '-d', subnet, '-j', 'RETURN'])
+    for dest in BLOCKED_DESTS:
+        _ipt_del(['-s', subnet, '-d', dest, '-j', 'DROP'])
+
+
+def add_conn_limit_rule(subnet: str):
+    # Meter NEW outbound connections to CONN_RATE. "under-rate -> RETURN" above
+    # "NEW -> DROP". -I inserts at top, so insert DROP first, RETURN second.
+    # Only NEW is metered; established/return traffic is untouched.
+    _ipt([
+        '-I', 'DOCKER-USER', '-s', subnet, '-m', 'conntrack', '--ctstate', 'NEW',
+        '-j', 'DROP',
+    ])
+    _ipt([
+        '-I', 'DOCKER-USER', '-s', subnet, '-m', 'conntrack', '--ctstate', 'NEW',
+        '-m', 'limit', '--limit', str(MAX_CONNECTION_RATE), '--limit-burst', str(MAX_CONNECTION_BURST),
+        '-j', 'RETURN',
+    ])
+
+
+def del_conn_limit_rule(subnet: str):
+    _ipt_del([
+      '-s', subnet, '-m', 'conntrack', '--ctstate', 'NEW',
+      '-m', 'limit', '--limit', str(MAX_CONNECTION_RATE), '--limit-burst', str(MAX_CONNECTION_BURST),
+      '-j', 'RETURN',
+    ])
+    _ipt_del(['-s', subnet, '-m', 'conntrack', '--ctstate', 'NEW', '-j', 'DROP'])
+
+
+def _bridge_name(network_id: str):
+    return 'br-' + network_id[:12]
+
+
+def add_bandwidth_limit(network_id: str):
+    _tc([
+        'qdisc', 'add', 'dev', _bridge_name(network_id), 'root', 'tbf',
+        'rate', str(MAX_CONNECTION_SPEED), 'burst', '32kbit', 'latency', '50ms',
+    ])
+
+
+def del_bandwidth_limit(network_id: str):
+    _tc(['qdisc', 'del', 'dev', _bridge_name(network_id), 'root'], check=False)
+
+
+
 class NotSoCode:
     BUILD_STATUS: dict[str, bool] = {}
 
@@ -47,6 +129,39 @@ class NotSoCode:
     client_api = None
     dockerfiles_directory = '/dockerfiles'
     tag_prepend = os.getenv('NOTSOCODE_DOCKER_TAG_PREPEND', 'notsocode')
+
+    @classmethod
+    def ensure_docker_user_ready(cls):
+        if _ipt(['-S', 'DOCKER-USER'], check=False).returncode != 0:
+            raise RuntimeError('DOCKER-USER chain missing — cannot enforce network policy')
+
+    @classmethod
+    def sweep_orphan_rules(cls, client, pool_cidr='10.200.0.0/16'):
+        # Remove subnet-scoped rules left by crashed jobs (subnet no longer live).
+        # Generic: catches egress, rate-limit, and own-subnet rules alike. pool_cidr
+        # guard ensures we never delete a rule outside the job pool.
+        import ipaddress
+        pool = ipaddress.ip_network(pool_cidr)
+
+        live = set()
+        for net in client.networks.list():
+            for cfg in (net.attrs.get('IPAM', {}).get('Config') or []):
+                if cfg.get('Subnet'):
+                    live.add(cfg['Subnet'])
+
+        for line in _ipt(['-S', 'DOCKER-USER'], check=False).stdout.splitlines():
+            parts = line.split()
+            if not parts or parts[0] != '-A' or '-s' not in parts:
+                continue
+            subnet = parts[parts.index('-s') + 1]
+            if subnet in live:
+                continue
+            try:
+                if not ipaddress.ip_network(subnet, strict=False).subnet_of(pool):
+                    continue
+            except ValueError:
+                continue
+            _ipt(['-D', 'DOCKER-USER', *parts[2:]], check=False)
 
     @classmethod
     def generate_tag(cls, language_: Languages, version: Optional[str] = None):
@@ -67,6 +182,8 @@ class NotSoCode:
                 cls.client = docker.DockerClient(base_url=os.getenv('DOCKER_BASE_URL'))
             else:
                 cls.client = docker.from_env()
+            cls.ensure_docker_user_ready()
+            cls.sweep_orphan_rules(cls.client)
         return cls.client
 
     @classmethod
@@ -238,12 +355,25 @@ class NotSoCode:
             except Exception as error:
                 print('error creating network', str(error))
 
+            if network:
+                network.reload()
+                subnet = network.attrs['IPAM']['Config'][0]['Subnet']
+
+                job.network = network
+                job.network_subnet = subnet
+
+                # order: conn-limit first (ends up at bottom), egress-block last
+                # (ends up on top) so internal DROPs sit above the rate-limit RETURN.
+                add_conn_limit_rule(subnet)
+                add_egress_block_rules(subnet)
+                add_bandwidth_limit(network.id)
+
         network_kwargs: dict = {}
         if network:
             network_kwargs['network'] = network.name
         else:
-            network_kwargs['disabled'] = True
-            network_kwargs['mode'] = 'none'
+            network_kwargs['network_disabled'] = True
+            network_kwargs['network_mode'] = 'none'
 
         try:
             environment: dict = {}
@@ -252,7 +382,6 @@ class NotSoCode:
 
             # todo: add memory and storage limits, then limit cpu
 
-            job.network = network
             container = client.containers.create(
                 tag,
                 # cpu limits
@@ -266,13 +395,14 @@ class NotSoCode:
                 #kernel_memory=1,
                 environment=environment,
                 labels={
-                    'com.docker-tc.enabled': '1',
-                    'com.docker-tc.limit': '20mbps',
-                    'com.docker-tc.delay': '50ms',
+                    #'com.docker-tc.enabled': '1',
+                    #'com.docker-tc.limit': '20mbps',
+                    #'com.docker-tc.delay': '50ms',
                 },
-                log_config=docker.types.LogConfig(config={
-                    'max-size': str(MAX_RESULT_LENGTH * 2),
-                }),
+                log_config=docker.types.LogConfig(
+                    type=docker.types.LogConfig.types.JSON,
+                    config={'max-size': f'{MAX_RESULT_LENGTH * 2}b'},
+                ),
                 mem_limit=max_memory,
                 #mounts=[
                 #    docker.types.Mount(
@@ -332,11 +462,13 @@ class Job:
         language: Languages,
         version: str,
         network: Any = None,
+        network_subnet: Optional[str] = None,
     ):
         cls.container = container
         cls.language = language
         cls.version = version
         cls.network = network
+        cls.network_subnet = network_subnet
 
     @asyncify()
     def kill(self):
@@ -350,16 +482,20 @@ class Job:
         if not self.container:
             return
 
-        try:
-            self.container.remove(force=True)
-        except:
-            pass
+        try: self.container.remove(force=True)
+        except: pass
 
         if self.network:
-            try:
-                self.network.remove()
-            except:
-                pass
+            subnet = getattr(self, 'network_subnet', None)
+            if subnet:
+                try: del_egress_block_rules(subnet)
+                except Exception: pass
+                try: del_conn_limit_rule(subnet)
+                except Exception: pass
+            try: del_bandwidth_limit(self.network.id)
+            except Exception: pass
+            try: self.network.remove()
+            except Exception: pass
 
         self.container = None
         self.network = None

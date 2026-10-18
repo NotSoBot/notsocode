@@ -24,7 +24,9 @@ RUN apt-get update -y  && apt-get install -y \
     wget git cmake ninja-build nasm python3 python3-full \
     fftw-dev libcairo2-dev libfontconfig1-dev libgtk2.0-dev libpango1.0-dev \
     libjpeg62-turbo libtiff-dev libwebp-dev librsvg2-dev zlib1g \
-    libx264-dev libx265-dev libtool build-essential
+    libx264-dev libx265-dev libtool build-essential && \
+    rm -rf /var/lib/apt/lists/* && \
+    ldconfig
 
 
 # Setup Python venv
@@ -41,25 +43,29 @@ RUN wget https://code.videolan.org/videolan/dav1d/-/archive/1.5.3/dav1d-1.5.3.ta
 # Build aom
 RUN git clone https://aomedia.googlesource.com/aom.git && \
     cd aom && mkdir -p aom_build && cd aom_build && \
-    cmake .. && make -j$(nproc) && make install
+    cmake .. && make -j$(nproc) && make install -j$(nproc) && ldconfig
 
 # Build libde265
 RUN wget https://github.com/strukturag/libde265/releases/download/v1.0.18/libde265-1.0.18.tar.gz -O libde265.tar.gz && \
     mkdir -p libde265 && tar xvzf libde265.tar.gz --strip-components=1 -C libde265 && \
     cd libde265 && mkdir build && cd build && \
-    cmake .. && make -j$(nproc) && make install
+    cmake .. && make -j$(nproc) && make install -j$(nproc) && ldconfig
 
 # Build libheif
 RUN wget https://github.com/strukturag/libheif/releases/download/v1.21.2/libheif-1.21.2.tar.gz -O libheif.tar.gz && \
     mkdir -p libheif && tar xvzf libheif.tar.gz --strip-components=1 -C libheif && \
-    cd libheif && cmake . && make -j$(nproc) && make install
+    cd libheif && cmake . && make -j$(nproc) && make install -j$(nproc) && ldconfig
+
+# build lqr
+RUN wget https://github.com/carlobaldassi/liblqr/archive/refs/tags/v0.4.3.tar.gz -O liblqr.tar.gz && \
+    mkdir -p liblqr && tar xvzf liblqr.tar.gz --strip-components=1 -C liblqr && \
+    cd liblqr && ./configure && make -j$(nproc) && make install -j$(nproc) && ldconfig
 
 # Build ImageMagick
 RUN wget https://github.com/ImageMagick/ImageMagick/archive/refs/tags/7.1.2-18.tar.gz -O ImageMagick.tar.gz && \
     mkdir -p ImageMagick && tar xvzf ImageMagick.tar.gz --strip-components=1 -C ImageMagick && \
-    cd ImageMagick && \
-    ./configure --with-lqr --enable-shared --with-modules && \
-    make -j$(nproc) && make install
+    cd ImageMagick && ./configure --with-lqr --enable-shared --with-modules && \
+    make -j$(nproc) && make install -j$(nproc) && ldconfig
 
 
 

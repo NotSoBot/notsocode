@@ -10,6 +10,7 @@ matplotlib==3.10.8
 beautifulsoup4==4.14.3
 yfinance==1.2.0
 pysqlite3==0.6.0
+librosa==0.11.0
 moviepy==2.2.1
 networkx==3.6.1
 opencv-python==4.13.0.92

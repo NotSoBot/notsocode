@@ -43,9 +43,10 @@ async def execute_script(request: Request, params=Execute):
     job = await NotSoCode.create_job(
         params.language,
         params.code,
-        version=params.version,
+        allow_network=params.allow_network,
         files=files,
         stdin=params.stdin,
+        version=params.version,
     )
     request.ctx.jobs.add(job)
     response = await job.execute(timeout=params.timeout)
