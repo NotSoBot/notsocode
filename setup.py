@@ -12,20 +12,21 @@ for filepath in glob('notsocode/dockerfiles/**', recursive=True):
 
 install_requires = [
     'docker==7.2.0',
-    'types-requests==2.33.0.20260712',
-    'python-dotenv==1.2.2',
+    'requests==2.34.2',
+    'types-requests==2.33.0.20261006',
+    'python-dotenv==1.2.4',
 ]
 
 server_requires = [
     'sanic==25.12.1',
     'sanic_dantic @ git+https://github.com/notsobot/nsb.api.sanic-dantic.git@all-parameter',
-    'pydantic==2.13.4',
-    'python-dotenv==1.2.2',
+    'pydantic==2.14.1',
+    'python-dotenv==1.2.4',
 ]
 
 setup_kwargs = {
     'name': 'notsocode',
-    'version': '2.0.0',
+    'version': '2.1.0',
     'url': 'https://github.com/notsobot/notsocode',
     'author': 'cake',
     'description': (
@@ -38,6 +39,8 @@ setup_kwargs = {
     },
     'include_package_data': True,
     'platforms': 'any',
+    # the pinned sanic/pydantic/dotenv need it
+    'python_requires': '>=3.10',
     'install_requires': install_requires,
     'extras_require': {
         'server': server_requires,

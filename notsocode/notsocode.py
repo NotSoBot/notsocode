@@ -1,8 +1,8 @@
-import json
 import io
 import os
 import subprocess
 import tarfile
+import threading
 import time
 
 from datetime import datetime, timedelta, timezone
@@ -17,6 +17,13 @@ from notsocode.utilities.wrappers import asyncify
 
 
 DEFAULT_TIMEOUT = 15
+
+
+class ExecutionTimeout(Exception):
+    def __init__(self, timeout: float):
+        self.timeout = timeout
+        super().__init__(f'Code Execution took longer than {timeout:g} seconds')
+
 
 USER = os.getenv('NOTSOCODE_USER', 'notsocoder')
 USER_UID = os.getenv('NOTSOCODE_USER_UID', '42069')
@@ -37,11 +44,14 @@ MAX_CONNECTION_SPEED = os.getenv('NOTSOCODE_PROCESS_MAX_CONNECTION_SPEED', '160m
 MAX_FILES = int(os.getenv('NOTSOCODE_PROCESS_MAX_FILES', 10))
 MAX_MEMORY = os.getenv('NOTSOCODE_PROCESS_MAX_MEMORY', '2048m')
 MAX_RESULT_LENGTH = 1 * 1024 * 1024
-MAX_STORAGE_SIZE = '512m'
+# writable layer quota per container, e.g. '512m'; off by default since docker needs overlay2 on xfs with pquota
+MAX_STORAGE_SIZE = os.getenv('NOTSOCODE_PROCESS_MAX_STORAGE', '')
+MAX_TIMEOUT = float(os.getenv('NOTSOCODE_PROCESS_MAX_TIMEOUT', 30))
 
 ULIMIT_FILE_SIZE = int(os.getenv('NOTSOCODE_PROCESS_ULIMIT_FILE_SIZE', 100 * 1024 * 1024))
 ULIMIT_FILES = int(os.getenv('NOTSOCODE_PROCESS_ULIMIT_FILES', 2048))
 ULIMIT_MEMORY = 2 * 1024 * 1024 * 1024
+# enforced per container with pids_limit, an nproc ulimit is counted per host uid so every job would share it
 ULIMIT_PROCESSES = int(os.getenv('NOTSOCODE_PROCESS_ULIMIT_PROCESSES', 512))
 
 
@@ -55,12 +65,31 @@ BLOCKED_DESTS = [
 ]
 
 
+# every rule a job adds carries this comment, so the orphan sweep can tell ours apart from anything else
+RULE_TAG = 'notsocode-job'
+RULE_CHAINS = ('DOCKER-USER', 'INPUT')
+
+# job networks carry this label so pruning never touches networks that aren't ours
+NETWORK_LABEL = 'notsocode.job'
+# networks are pruned and orphaned rules swept at most this often, every job triggers it
+NETWORK_MAINTENANCE_INTERVAL = int(os.getenv('NOTSOCODE_NETWORK_MAINTENANCE_INTERVAL', 60))
+
+
 def _ipt(args, check=True):
     return subprocess.run(['iptables', *args], check=check, capture_output=True, text=True)
 
 
-def _ipt_del(args):
-    subprocess.run(['iptables', '-D', 'DOCKER-USER', *args], capture_output=True, text=True)
+def _tagged(spec):
+    # comment match goes right before the `-j target`, same place `iptables -S` prints it
+    return [*spec[:-2], '-m', 'comment', '--comment', RULE_TAG, *spec[-2:]]
+
+
+def _ipt_add(chain, spec):
+    _ipt(['-I', chain, *_tagged(spec)])
+
+
+def _ipt_del(spec, chain='DOCKER-USER'):
+    subprocess.run(['iptables', '-D', chain, *_tagged(spec)], capture_output=True, text=True)
 
 
 def _tc(args, check=True):
@@ -72,8 +101,8 @@ def add_egress_block_rules(subnet: str):
     # sits ABOVE the drops — otherwise -d 10.0.0.0/8 would also block the container
     # from reaching its own gateway and embedded DNS (job subnet is inside 10/8).
     for dest in BLOCKED_DESTS:
-        _ipt(['-I', 'DOCKER-USER', '-s', subnet, '-d', dest, '-j', 'DROP'])
-    _ipt(['-I', 'DOCKER-USER', '-s', subnet, '-d', subnet, '-j', 'RETURN'])
+        _ipt_add('DOCKER-USER', ['-s', subnet, '-d', dest, '-j', 'DROP'])
+    _ipt_add('DOCKER-USER', ['-s', subnet, '-d', subnet, '-j', 'RETURN'])
 
 
 def del_egress_block_rules(subnet: str):
@@ -82,16 +111,26 @@ def del_egress_block_rules(subnet: str):
         _ipt_del(['-s', subnet, '-d', dest, '-j', 'DROP'])
 
 
+def add_host_block_rule(subnet: str):
+    # DOCKER-USER only sees forwarded traffic, anything addressed to the host itself (bridge gateway,
+    # public ip, services bound to 0.0.0.0) goes through INPUT instead
+    _ipt_add('INPUT', ['-s', subnet, '-j', 'DROP'])
+
+
+def del_host_block_rule(subnet: str):
+    _ipt_del(['-s', subnet, '-j', 'DROP'], chain='INPUT')
+
+
 def add_conn_limit_rule(subnet: str):
     # Meter NEW outbound connections to CONN_RATE. "under-rate -> RETURN" above
     # "NEW -> DROP". -I inserts at top, so insert DROP first, RETURN second.
     # Only NEW is metered; established/return traffic is untouched.
-    _ipt([
-        '-I', 'DOCKER-USER', '-s', subnet, '-m', 'conntrack', '--ctstate', 'NEW',
+    _ipt_add('DOCKER-USER', [
+        '-s', subnet, '-m', 'conntrack', '--ctstate', 'NEW',
         '-j', 'DROP',
     ])
-    _ipt([
-        '-I', 'DOCKER-USER', '-s', subnet, '-m', 'conntrack', '--ctstate', 'NEW',
+    _ipt_add('DOCKER-USER', [
+        '-s', subnet, '-m', 'conntrack', '--ctstate', 'NEW',
         '-m', 'limit', '--limit', str(MAX_CONNECTION_RATE), '--limit-burst', str(MAX_CONNECTION_BURST),
         '-j', 'RETURN',
     ])
@@ -104,6 +143,27 @@ def del_conn_limit_rule(subnet: str):
       '-j', 'RETURN',
     ])
     _ipt_del(['-s', subnet, '-m', 'conntrack', '--ctstate', 'NEW', '-j', 'DROP'])
+
+
+class _ChunkReader(io.RawIOBase):
+    # file-like view of docker's chunk generator so tarfile can stream it
+    def __init__(self, chunks):
+        self._chunks = iter(chunks)
+        self._buffer = b''
+
+    def readable(self):
+        return True
+
+    def readinto(self, buffer):
+        while not self._buffer:
+            try:
+                self._buffer = next(self._chunks)
+            except StopIteration:
+                return 0
+        size = min(len(buffer), len(self._buffer))
+        buffer[:size] = self._buffer[:size]
+        self._buffer = self._buffer[size:]
+        return size
 
 
 def _bridge_name(network_id: str):
@@ -124,6 +184,10 @@ def del_bandwidth_limit(network_id: str):
 
 class NotSoCode:
     BUILD_STATUS: dict[str, bool] = {}
+    # builds run on executor threads, the status check-and-set has to be atomic
+    build_lock = threading.Lock()
+    network_maintenance_lock = threading.Lock()
+    network_maintenance_last = 0.0
 
     client = None
     client_api = None
@@ -137,11 +201,15 @@ class NotSoCode:
 
     @classmethod
     def sweep_orphan_rules(cls, client, pool_cidr='10.200.0.0/16'):
-        # Remove subnet-scoped rules left by crashed jobs (subnet no longer live).
-        # Generic: catches egress, rate-limit, and own-subnet rules alike. pool_cidr
-        # guard ensures we never delete a rule outside the job pool.
+        # Remove rules left behind by jobs whose network is gone (crashed process, pruned network).
+        # Tagged rules are ours wherever their subnet is; untagged DOCKER-USER rules predate tagging
+        # and are only touched inside pool_cidr, the old guard.
         import ipaddress
         pool = ipaddress.ip_network(pool_cidr)
+
+        # rules are read BEFORE the networks are listed: a job that creates its network and adds its
+        # rules in between would otherwise look orphaned and lose its rules mid-run
+        rules = {chain: _ipt(['-S', chain], check=False).stdout.splitlines() for chain in RULE_CHAINS}
 
         live = set()
         for net in client.networks.list():
@@ -149,19 +217,48 @@ class NotSoCode:
                 if cfg.get('Subnet'):
                     live.add(cfg['Subnet'])
 
-        for line in _ipt(['-S', 'DOCKER-USER'], check=False).stdout.splitlines():
-            parts = line.split()
-            if not parts or parts[0] != '-A' or '-s' not in parts:
-                continue
-            subnet = parts[parts.index('-s') + 1]
-            if subnet in live:
-                continue
-            try:
-                if not ipaddress.ip_network(subnet, strict=False).subnet_of(pool):
+        for chain, lines in rules.items():
+            for line in lines:
+                # some iptables versions quote the comment, the rule spec itself has no quoted values
+                parts = [x.strip('"') for x in line.split()]
+                if not parts or parts[0] != '-A' or '-s' not in parts:
                     continue
-            except ValueError:
-                continue
-            _ipt(['-D', 'DOCKER-USER', *parts[2:]], check=False)
+                subnet = parts[parts.index('-s') + 1]
+                if subnet in live:
+                    continue
+
+                tagged = '--comment' in parts and parts[parts.index('--comment') + 1] == RULE_TAG
+                if not tagged:
+                    # INPUT holds the host's own rules, we only ever remove tagged ones there
+                    if chain == 'INPUT':
+                        continue
+                    try:
+                        if not ipaddress.ip_network(subnet, strict=False).subnet_of(pool):
+                            continue
+                    except ValueError:
+                        continue
+                _ipt(['-D', chain, *parts[2:]], check=False)
+
+    @classmethod
+    def maintain_networks(cls, client):
+        # prune our stale job networks then sweep the rules they left, throttled since every job calls this
+        with cls.network_maintenance_lock:
+            now = time.time()
+            if now - cls.network_maintenance_last < NETWORK_MAINTENANCE_INTERVAL:
+                return
+            cls.network_maintenance_last = now
+
+        try:
+            until = (datetime.now(timezone.utc) - timedelta(minutes=3)).strftime('%Y-%m-%dT%H:%M:%SZ')
+            result = client.networks.prune(filters={'label': NETWORK_LABEL, 'until': until})
+            print(f"Pruned {len(result['NetworksDeleted'] or [])} networks", flush=True)
+        except Exception as error:
+            print('error pruning networks', str(error), flush=True)
+
+        try:
+            cls.sweep_orphan_rules(client)
+        except Exception as error:
+            print('error sweeping firewall rules', str(error), flush=True)
 
     @classmethod
     def generate_tag(cls, language_: Languages, version: Optional[str] = None):
@@ -243,12 +340,12 @@ class NotSoCode:
 
     @classmethod
     def _build_sync(cls, directory: str, tag: str, base: Optional[BaseImages] = None, **kwargs):
-        if tag in cls.BUILD_STATUS:
-            if not cls.BUILD_STATUS[tag]:
-                raise Exception(f'{tag} is currently being built, come back later')
-            return
-
-        cls.BUILD_STATUS[tag] = False
+        with cls.build_lock:
+            if tag in cls.BUILD_STATUS:
+                if not cls.BUILD_STATUS[tag]:
+                    raise Exception(f'{tag} is currently being built, come back later')
+                return
+            cls.BUILD_STATUS[tag] = False
         kwargs['buildargs'] = {
             'BASE_IMAGE': base.tag if base else BaseImages.BOOKWORM_SLIM.tag,
             'DIRECTORY_HOME': DIRECTORY_HOME,
@@ -261,15 +358,17 @@ class NotSoCode:
         }
  
         print(f'Building {tag}.', flush=True)
-        client = cls.get_api_client()
-        lines = [
-            json.loads(x) for x in client.build(path=directory, tag=tag, forcerm=True, **kwargs)
-        ]
-        print(lines, flush=True)
+        try:
+            client = cls.get_api_client()
+            lines = list(client.build(path=directory, tag=tag, forcerm=True, decode=True, **kwargs))
+            print(lines, flush=True)
 
-        if 'errorDetail' in lines[-1]:
-            del cls.BUILD_STATUS[tag]
-            raise Exception('\n'.join(x.get('error', x.get('stream', '')) for x in lines))#last_line['errorDetail']['message'])
+            if not lines or 'errorDetail' in lines[-1]:
+                raise Exception('\n'.join(x.get('error', x.get('stream', '')) for x in lines) or f'{tag} failed to build')
+        except Exception:
+            # clear the in-progress marker so the build can be retried
+            cls.BUILD_STATUS.pop(tag, None)
+            raise
 
         cls.BUILD_STATUS[tag] = True
         return lines
@@ -342,38 +441,39 @@ class NotSoCode:
 
         network = None
         if allow_network:
-            try:
-                one_hour_ago = datetime.now(timezone.utc) - timedelta(minutes=3)
-                timestamp = one_hour_ago.strftime('%Y-%m-%dT%H:%M:%SZ')
-                result = client.networks.prune(filters={'until': timestamp})
-                print(f"Pruned {len(result['NetworksDeleted'] or [])} networks")
-            except Exception as error:
-                print('error pruning networks', str(error))
+            cls.maintain_networks(client)
 
             try:
-                network = client.networks.create(f'{time.time()}')
+                network = client.networks.create(f'{time.time()}', labels={NETWORK_LABEL: '1'})
             except Exception as error:
                 print('error creating network', str(error))
 
             if network:
-                network.reload()
-                subnet = network.attrs['IPAM']['Config'][0]['Subnet']
-
                 job.network = network
-                job.network_subnet = subnet
+                try:
+                    network.reload()
+                    subnet = network.attrs['IPAM']['Config'][0]['Subnet']
+                    job.network_subnet = subnet
 
-                # order: conn-limit first (ends up at bottom), egress-block last
-                # (ends up on top) so internal DROPs sit above the rate-limit RETURN.
-                add_conn_limit_rule(subnet)
-                add_egress_block_rules(subnet)
-                add_bandwidth_limit(network.id)
+                    # order: conn-limit first (ends up at bottom), egress-block last
+                    # (ends up on top) so internal DROPs sit above the rate-limit RETURN.
+                    add_conn_limit_rule(subnet)
+                    add_egress_block_rules(subnet)
+                    add_host_block_rule(subnet)
+                    add_bandwidth_limit(network.id)
+                except Exception:
+                    # don't leave the network or a partial rule set behind
+                    job.kill_sync()
+                    raise
 
-        network_kwargs: dict = {}
+        container_kwargs: dict = {}
         if network:
-            network_kwargs['network'] = network.name
+            container_kwargs['network'] = network.name
         else:
-            network_kwargs['network_disabled'] = True
-            network_kwargs['network_mode'] = 'none'
+            container_kwargs['network_disabled'] = True
+            container_kwargs['network_mode'] = 'none'
+        if MAX_STORAGE_SIZE:
+            container_kwargs['storage_opt'] = {'size': MAX_STORAGE_SIZE}
 
         try:
             environment: dict = {}
@@ -404,6 +504,7 @@ class NotSoCode:
                     config={'max-size': f'{MAX_RESULT_LENGTH * 2}b'},
                 ),
                 mem_limit=max_memory,
+                pids_limit=ULIMIT_PROCESSES,
                 #mounts=[
                 #    docker.types.Mount(
                 #        target='/home',
@@ -422,24 +523,22 @@ class NotSoCode:
                 #    f'{DIRECTORY_HOME}{DIRECTORY_OUTPUT}': 'size=100m',
                 #},
                 #stdin_open=bool(stdin),
-                #storage_opt={'size': '128m'},
                 #tty=bool(stdin),
                 ulimits=[
                     #docker.types.Ulimit(name='as', soft=ULIMIT_MEMORY, hard=ULIMIT_MEMORY),
                     docker.types.Ulimit(name='fsize', soft=ULIMIT_FILE_SIZE, hard=ULIMIT_FILE_SIZE),
                     docker.types.Ulimit(name='nofile', soft=ULIMIT_FILES, hard=ULIMIT_FILES),
-                    docker.types.Ulimit(name='nproc', soft=ULIMIT_PROCESSES, hard=ULIMIT_PROCESSES),
                 ],
-                **network_kwargs,
+                **container_kwargs,
             )
+            job.container = container
 
             tar_stream.seek(0)
             container.put_archive(DIRECTORY_HOME, tar_stream)
-
-            job.container = container
         except Exception as error:
             print('error creating container', str(error))
-            job.container = None
+            job.kill_sync()
+            raise
 
         print('done creation', job.language, job.version, int((time.time() - now) * 1000), flush=True)
         return job
@@ -450,9 +549,9 @@ class NotSoCode:
         return cls.execute_sync(*args, **kwargs)
 
     @classmethod
-    def execute_sync(cls, *args, **kwargs):
+    def execute_sync(cls, *args, timeout: float = DEFAULT_TIMEOUT, **kwargs):
         job = cls.create_job_sync(*args, **kwargs)
-        return job.execute_sync(*args, **kwargs)
+        return job.execute_sync(timeout=timeout)
 
 
 class Job:
@@ -475,15 +574,14 @@ class Job:
         self.kill_sync()
 
     @asyncify()
-    def execute(self, timeout: int = DEFAULT_TIMEOUT, *args, **kwargs):
+    def execute(self, timeout: float = DEFAULT_TIMEOUT, *args, **kwargs):
         return self.execute_sync(timeout)
 
     def kill_sync(self):
-        if not self.container:
-            return
-
-        try: self.container.remove(force=True)
-        except: pass
+        # network cleanup runs even without a container (creation may have failed)
+        if self.container:
+            try: self.container.remove(force=True)
+            except: pass
 
         if self.network:
             subnet = getattr(self, 'network_subnet', None)
@@ -491,6 +589,8 @@ class Job:
                 try: del_egress_block_rules(subnet)
                 except Exception: pass
                 try: del_conn_limit_rule(subnet)
+                except Exception: pass
+                try: del_host_block_rule(subnet)
                 except Exception: pass
             try: del_bandwidth_limit(self.network.id)
             except Exception: pass
@@ -502,7 +602,7 @@ class Job:
 
     def execute_sync(
         self,
-        timeout: int = DEFAULT_TIMEOUT,
+        timeout: float = DEFAULT_TIMEOUT,
         max_file_size_total: int = ULIMIT_FILE_SIZE,
         *args,
         **kwargs,
@@ -517,11 +617,13 @@ class Job:
 
             try:
                 self.container.wait(timeout=timeout)
-            except requests.exceptions.ConnectionError:
-                print('error', self.language, self.version, flush=True)
-                print(self.container.logs(stdout=True, stderr=False), flush=True)
-                print(self.container.logs(stdout=False, stderr=True), flush=True)
-                raise ValueError(f'Code Execution took longer than {timeout} seconds')
+            except (requests.exceptions.ConnectionError, requests.exceptions.ReadTimeout) as wait_error:
+                # over a unix socket a read timeout comes back as a ConnectionError, over tcp as a ReadTimeout;
+                # any other ConnectionError is the daemon being unreachable, not the code being slow
+                if not isinstance(wait_error, requests.exceptions.ReadTimeout) and 'timed out' not in str(wait_error).lower():
+                    raise
+                print('timeout', self.language, self.version, flush=True)
+                raise ExecutionTimeout(timeout) from wait_error
 
             print('done execution', self.language, self.version, int((time.time() - now) * 1000), flush=True)
 
@@ -533,17 +635,14 @@ class Job:
                 bits, stat = self.container.get_archive(DIRECTORY_HOME_OUTPUT)
                 print(stat, flush=True)
 
-                tar_stream = io.BytesIO()
-                for chunk in bits:
-                    tar_stream.write(chunk)
-
-                tar_stream.seek(0)
-                tar = tarfile.open(fileobj=tar_stream, mode='r')
-
-                # todo: output the files correctly
+                # streamed, so a huge /output is never buffered whole and reading stops at a limit
+                tar = tarfile.open(fileobj=io.BufferedReader(_ChunkReader(bits)), mode='r|')
 
                 file_size_total = 0
-                for member in tar.getmembers():
+                for member in tar:
+                    if MAX_FILES <= len(files_output):
+                        break
+
                     if not member.isfile():
                         continue
 
@@ -556,7 +655,7 @@ class Job:
                     if max_file_size_total < file_size_total + size:
                         break
 
-                    max_file_size_total += size
+                    file_size_total += size
                     files_output.append({
                         'buffer': buffer,
                         'filename': member.name.split('/')[-1],
@@ -571,9 +670,9 @@ class Job:
         return {
             'language': self.language.to_dict(),
             'result': {
-                'error': error.decode().strip()[:MAX_RESULT_LENGTH],
+                'error': error.decode(errors='replace').strip()[:MAX_RESULT_LENGTH],
                 'files': files_output,
-                'output': output.decode().strip()[:MAX_RESULT_LENGTH],
+                'output': output.decode(errors='replace').strip()[:MAX_RESULT_LENGTH],
             },
             'took': int((time.time() - now) * 1000),
             'version': self.version,

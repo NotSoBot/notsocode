@@ -47,8 +47,16 @@ ENV HOME=$DIRECTORY_HOME
 ENV LANG=C.UTF-8
 ENV MAX_FILES=$MAX_FILES
 ENV USER=$USER
+# compile and run both happen as the user, the compiler reads user-controlled source;
+# output is pruned even when the script fails, after any leftover user processes are killed so nothing
+# writes past it; dotfiles, subdirectories and symlinks count too, keeping the newest $MAX_FILES files
 ENTRYPOINT cd $DIRECTORY_HOME && chown -R "$USER":"$USER" $HOME && chmod -R 777 $HOME && \
-    export SCRIPT=$(readlink -e $(find . -type f -name "$FILENAME_SCRIPT*" -print -quit)) && \
-    eval $COMMAND_COMPILE && \
-    (su $USER -c '(if (test -e $FILENAME_STDIN); then cat $FILENAME_STDIN; fi;) | eval $COMMAND') && \
-    (if (test -d "$DIRECTORY_OUTPUT"); then cd $DIRECTORY_OUTPUT && rm -rf -- */ && ls -1tr | head -n -$MAX_FILES | xargs -d "\n" rm -rf --; fi;)
+    export SCRIPT=$(readlink -e $(find . -maxdepth 1 -type f -name "$FILENAME_SCRIPT*" -print -quit)) && \
+    su $USER -c 'eval $COMMAND_COMPILE' && \
+    (su $USER -c '(if (test -e $FILENAME_STDIN); then cat $FILENAME_STDIN; fi;) | eval $COMMAND'); \
+    status=$?; \
+    su $USER -c 'kill -9 -1' >/dev/null 2>&1; \
+    (if (test -d "$DIRECTORY_OUTPUT"); then cd $DIRECTORY_OUTPUT && \
+        find . -mindepth 1 -maxdepth 1 ! -type f -exec rm -rf -- {} + ; \
+        find . -mindepth 1 -maxdepth 1 -type f -printf '%T@ %p\0' | sort -z -n | head -z -n -$MAX_FILES | cut -z -d ' ' -f 2- | xargs -0 -r rm -f --; fi;); \
+    exit $status

@@ -42,24 +42,31 @@ async def build_all(request: Request):
 
 @build.get('/all')
 async def build_all_results(request: Request):
-    request.app.purge_tasks()
+    # no purge here, it would drop a finished task before its results are read
     try:
         task = request.app.get_task(name='build-all', raise_exception=True)
-        if task:
-            await task
-            return json({'results': task.result(), 'task': 'done'})
-        return json({'results': [], 'task': 'done'})
     except:
-        pass
-    return json({'results': [], 'task': 'none'})
+        return json({'results': [], 'task': 'none'})
+
+    if task:
+        await task
+        return json({'results': task.result(), 'task': 'done'})
+    return json({'results': [], 'task': 'done'})
 
 
 
 async def _build_all_task():
     results = []
     for language in Languages:
+        errors = {}
         tested = {}
         for version in language.versions:
-            tested[version] = await NotSoCode.build_and_test(language, version=version)
-        results.append({'language': language.to_dict(), 'tested': tested})
+            # one broken language shouldn't lose every other result
+            try:
+                tested[version] = await NotSoCode.build_and_test(language, version=version)
+            except Exception as error:
+                print(f'build-all {language}:{version} failed', str(error), flush=True)
+                errors[version] = str(error)
+                tested[version] = False
+        results.append({'errors': errors, 'language': language.to_dict(), 'tested': tested})
     return results

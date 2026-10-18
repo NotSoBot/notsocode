@@ -1,12 +1,10 @@
-import asyncio
 import base64
-import time
 
 from sanic import Blueprint, Request
 from sanic.response import json
 from sanic_dantic import parse_params
 
-from notsocode import Languages, NotSoCode
+from notsocode import NotSoCode
 
 from ..validators.models.execute import Execute
 
@@ -27,18 +25,17 @@ async def execute_script(request: Request, params=Execute):
                     'filename': storage.name,
                 })
 
-    file_counter: dict[str, int] = {}
-    for i in range(len(files)):
-        file_ = files[i]
+    # rename duplicates to `name (1).ext`, `name (2).ext`; no extension (or a dotfile) gets `name (1)`
+    filenames: set[str] = set()
+    for file_ in files:
         filename = file_['filename']
+        stem, _, extension = filename.rpartition('.')
 
         count = 0
-        if filename in file_counter:
-            count = file_counter[filename] + 1
-            parts = filename.split('.')
-            filename_new = '.'.join(parts[:-1]) + f' ({count}).{parts[-1]}'
-            file_['filename'] = filename_new
-        file_counter[filename] = count
+        while file_['filename'] in filenames:
+            count += 1
+            file_['filename'] = f'{stem} ({count}).{extension}' if stem else f'{filename} ({count})'
+        filenames.add(file_['filename'])
 
     job = await NotSoCode.create_job(
         params.language,
@@ -61,20 +58,3 @@ async def execute_script(request: Request, params=Execute):
         }
 
     return json(response)
-
-
-@execute.post('/test')
-async def execute_script_test(request: Request):
-    # todo: get files from request.storage
-    job = await NotSoCode.create_job(Languages.BASH, 'echo "OK"')
-    request.ctx.jobs.add(job)
-    await job.execute()
-    request.ctx.jobs.remove(job)
-
-    futures = []
-    for i in range(200):
-        future = NotSoCode.execute(Languages.BASH, 'echo "OK"')
-        futures.append(future)
-    now = time.time()
-    results = await asyncio.gather(*futures)
-    return json({'results': results, 'took': int((time.time() - now) * 1000)})
