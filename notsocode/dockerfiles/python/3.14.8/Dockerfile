@@ -1,12 +1,20 @@
 ARG BASE_IMAGE=base-buster
 FROM $BASE_IMAGE
 
+# every optional stdlib module's headers, a missing one silently drops that module (bz2 broke networkx)
 RUN apt update -y && apt install -y \
 	zlib1g zlib1g-dev \
 	libssl-dev \
 	libffi-dev \
 	liblzma-dev \
 	libsqlite3-dev \
+	libbz2-dev \
+	libreadline-dev \
+	libncurses-dev \
+	libgdbm-dev libgdbm-compat-dev \
+	uuid-dev \
+	libzstd-dev \
+	tk-dev \
 	&& rm -rf /var/lib/apt/lists/*
 
 WORKDIR /tmp

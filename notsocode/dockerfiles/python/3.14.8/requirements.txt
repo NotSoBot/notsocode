@@ -13,9 +13,10 @@ pysqlite3==0.6.1
 librosa==1.0.0
 moviepy==2.2.1
 networkx==3.7
-opencv-python==5.0.0.93
+opencv-python-headless==5.0.0.93
 primp==2.0.1
 pydub==0.25.1
+audioop-lts==0.2.2
 torch==2.14.1
 
 redis==8.1.0

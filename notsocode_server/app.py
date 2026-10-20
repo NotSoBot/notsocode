@@ -96,7 +96,9 @@ async def catch_all_validation_exceptions(request: Request, exception: Validatio
 
 
 def start():
-    app.run(host='0.0.0.0', port=8080, debug=False)#, single_process=True)
+    # one process: sanic's worker process re-imports the app by name, which fails under `python -m`,
+    # and the build lock, prune throttle and job state are per-process anyway (jobs run on threads)
+    app.run(host='0.0.0.0', port=8080, debug=False, single_process=True)
 
 if __name__ == '__main__':
     start()
