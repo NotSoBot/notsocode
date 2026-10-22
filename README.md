@@ -101,7 +101,7 @@ NOTSOCODE_STDIN_FILE = 'stdin' # the stdin filename inside the docker
 NOTSOCODE_PROCESS_MAX_FILES = 10 # the max amount of files we will extract from the container's /output
 NOTSOCODE_PROCESS_MAX_MEMORY = '2048m' # the max amount of memory a container can use before being killed
 NOTSOCODE_PROCESS_MAX_STORAGE = '' # writable layer quota per container (e.g. '512m'), off by default since docker needs overlay2 on xfs with pquota for it
-NOTSOCODE_PROCESS_MAX_TIMEOUT = 30 # the highest timeout (in seconds) the server accepts
+NOTSOCODE_PROCESS_MAX_TIMEOUT = 45 # the highest timeout (in seconds) the server accepts
 
 NOTSOCODE_PROCESS_ULIMIT_FILE_SIZE = (100 * 1024 * 1024) # the max file size a container can make at a time
 NOTSOCODE_PROCESS_ULIMIT_FILES = 2048 # the max amount of open files a container can have

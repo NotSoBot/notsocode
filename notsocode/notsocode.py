@@ -46,7 +46,7 @@ MAX_MEMORY = os.getenv('NOTSOCODE_PROCESS_MAX_MEMORY', '2048m')
 MAX_RESULT_LENGTH = 1 * 1024 * 1024
 # writable layer quota per container, e.g. '512m'; off by default since docker needs overlay2 on xfs with pquota
 MAX_STORAGE_SIZE = os.getenv('NOTSOCODE_PROCESS_MAX_STORAGE', '')
-MAX_TIMEOUT = float(os.getenv('NOTSOCODE_PROCESS_MAX_TIMEOUT', 30))
+MAX_TIMEOUT = float(os.getenv('NOTSOCODE_PROCESS_MAX_TIMEOUT', 45))
 
 ULIMIT_FILE_SIZE = int(os.getenv('NOTSOCODE_PROCESS_ULIMIT_FILE_SIZE', 100 * 1024 * 1024))
 ULIMIT_FILES = int(os.getenv('NOTSOCODE_PROCESS_ULIMIT_FILES', 2048))

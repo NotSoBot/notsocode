@@ -66,7 +66,7 @@ class Languages(Enumerable):
     LUA = ('lua', ('5.4.9', '5.5.1'), '5.5.1', 'lua')
     NASM = ('nasm', ('3.2.0',), None, 'asm')
     NASM_64 = ('nasm64', ('3.2.0',), None, 'asm')
-    NODE = ('node', ('22.23.3', '24.22.0', '26.12.0'), '24.22.0', 'js')
+    NODE = ('node', ('22.23.3', '24.22.0', '26.12.1'), '24.22.0', 'js')
     PERL = ('perl', ('5.44.0',), None, 'pl')
     PHP = ('php', ('8.5.11',), None, 'php')
     PROLOG = ('prolog', ('10.0.2',), None, 'pl')
