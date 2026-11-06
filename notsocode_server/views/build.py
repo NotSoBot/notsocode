@@ -3,10 +3,10 @@ from typing import cast
 from sanic import Blueprint, Request
 from sanic.exceptions import SanicException
 from sanic.response import json
-from sanic_dantic import parse_params
 
 from notsocode import Languages, NotSoCode
 
+from ..utilities.params import parse_params
 from ..validators.models.build import BuildSingle
 
 
@@ -15,7 +15,7 @@ build = Blueprint('build', url_prefix='/build')
 
 
 @build.post('')
-@parse_params(all=BuildSingle)
+@parse_params(BuildSingle)
 async def build_single(request: Request, params=BuildSingle):
     language = cast(Languages, params.language)
     tested = await NotSoCode.build_and_test(language, version=params.version)

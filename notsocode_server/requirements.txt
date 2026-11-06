@@ -1,7 +1,6 @@
 mypy==2.4.0
 
 sanic==25.12.1
-git+https://github.com/notsobot/nsb.api.sanic-dantic@all-parameter
 
 pydantic==2.14.1
 python-dotenv==1.2.4

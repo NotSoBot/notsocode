@@ -99,7 +99,9 @@ NOTSOCODE_SCRIPT_FILE = 'script' # the script filename inside the docker
 NOTSOCODE_STDIN_FILE = 'stdin' # the stdin filename inside the docker
 
 NOTSOCODE_PROCESS_MAX_FILES = 10 # the max amount of files we will extract from the container's /output
-NOTSOCODE_PROCESS_MAX_MEMORY = '2048m' # the max amount of memory a container can use before being killed
+NOTSOCODE_PROCESS_MAX_CPUS = 4 # how many cpus a container can use, ffmpeg encodes need more than 2 to fit the timeouts
+NOTSOCODE_PROCESS_CPU_SHARES = 512 # containers' cpu weight (docker's default is 1024), lower so dockerd and the server win when the host is out of cpu
+NOTSOCODE_PROCESS_MAX_MEMORY = '2048m' # the max amount of memory a container can use before being killed, no swap on top
 NOTSOCODE_PROCESS_MAX_STORAGE = '' # writable layer quota per container (e.g. '512m'), off by default since docker needs overlay2 on xfs with pquota for it
 NOTSOCODE_PROCESS_MAX_TIMEOUT = 45 # the highest timeout (in seconds) the server accepts
 
@@ -121,4 +123,16 @@ DOCKER_BASE_URL = '' # incase you're running dind
 NotSoCode Server
 ```
 SECRET = '' # required, each request must have this secret in the 'authorization' header
+NOTSOCODE_MAX_JOBS = 8 # jobs running at once, the rest wait for a slot
+NOTSOCODE_QUEUE_TIMEOUT = 5 # seconds a run waits for a slot before a 503, the run's own timeout only starts with its container
 ```
+
+
+# sandbox
+
+each job is a plain docker container (runc, the shared kernel is the boundary), so run this on a box of its own
+- the code runs as `NOTSOCODE_USER`, never root; the entrypoint's root only keeps CHOWN, DAC_OVERRIDE, FOWNER, SETUID and SETGID, with `no-new-privileges` so setuid binaries can't get back to root
+- cpu, memory (no swap), processes, open files and file size are capped per container, `NOTSOCODE_MAX_JOBS` caps how many run at once
+- disk is only capped with `NOTSOCODE_PROCESS_MAX_STORAGE`, which needs docker's overlay2 on xfs mounted with `pquota`; without it a job can write until the docker disk is full (the server warns on start)
+- networked jobs can't reach private/link-local/cgnat ranges, the host itself, or tcp port 25 anywhere, new connections and bandwidth are rate limited
+- jobs leave through the host's ip, so anything that allowlists that ip is reachable from them

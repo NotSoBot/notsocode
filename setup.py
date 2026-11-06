@@ -19,7 +19,6 @@ install_requires = [
 
 server_requires = [
     'sanic==25.12.1',
-    'sanic_dantic @ git+https://github.com/notsobot/nsb.api.sanic-dantic.git@all-parameter',
     'pydantic==2.14.1',
     'python-dotenv==1.2.4',
 ]

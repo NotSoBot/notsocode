@@ -41,6 +41,10 @@ MAX_CONNECTION_BURST  = int(os.getenv('NOTSOCODE_PROCESS_MAX_CONNECTION_BURST', 
 MAX_CONNECTION_RATE  = os.getenv('NOTSOCODE_PROCESS_MAX_CONNECTION_RATE', '3/sec')
 MAX_CONNECTION_SPEED = os.getenv('NOTSOCODE_PROCESS_MAX_CONNECTION_SPEED', '160mbit')
 
+MAX_CPUS = float(os.getenv('NOTSOCODE_PROCESS_MAX_CPUS', 4))
+# relative weight when the host is out of cpu, docker's default is 1024; below it dockerd and the server win then,
+# so container setup/removal doesn't eat into the jobs' timeouts. MAX_CPUS still caps a job when the host is idle
+CPU_SHARES = int(os.getenv('NOTSOCODE_PROCESS_CPU_SHARES', 512))
 MAX_FILES = int(os.getenv('NOTSOCODE_PROCESS_MAX_FILES', 10))
 MAX_MEMORY = os.getenv('NOTSOCODE_PROCESS_MAX_MEMORY', '2048m')
 MAX_RESULT_LENGTH = 1 * 1024 * 1024
@@ -62,6 +66,19 @@ BLOCKED_DESTS = [
     '192.168.0.0/16',
     '169.254.0.0/16',   # link-local — includes 169.254.169.254 cloud metadata
     '100.64.0.0/10',    # carrier-grade NAT / some cloud internal
+]
+
+# outbound tcp ports a job can't connect to anywhere, 25 is direct-to-mx spam that gets the host's ip listed
+BLOCKED_PORTS = [25]
+
+# the container's root only runs the entrypoint (chown/chmod the job files, su to the user, prune /output),
+# everything else docker gives by default (NET_RAW, MKNOD, SETFCAP, ...) is dropped
+CAPABILITIES = [
+    'CHOWN',
+    'DAC_OVERRIDE',     # pruning /output dirs the user made unreadable
+    'FOWNER',           # chmod on files the user owns
+    'SETGID',
+    'SETUID',
 ]
 
 
@@ -100,6 +117,8 @@ def add_egress_block_rules(subnet: str):
     # Broad DROPs first, then a RETURN for the job's OWN subnet inserted last so it
     # sits ABOVE the drops — otherwise -d 10.0.0.0/8 would also block the container
     # from reaching its own gateway and embedded DNS (job subnet is inside 10/8).
+    for port in BLOCKED_PORTS:
+        _ipt_add('DOCKER-USER', ['-s', subnet, '-p', 'tcp', '--dport', str(port), '-j', 'DROP'])
     for dest in BLOCKED_DESTS:
         _ipt_add('DOCKER-USER', ['-s', subnet, '-d', dest, '-j', 'DROP'])
     _ipt_add('DOCKER-USER', ['-s', subnet, '-d', subnet, '-j', 'RETURN'])
@@ -109,6 +128,8 @@ def del_egress_block_rules(subnet: str):
     _ipt_del(['-s', subnet, '-d', subnet, '-j', 'RETURN'])
     for dest in BLOCKED_DESTS:
         _ipt_del(['-s', subnet, '-d', dest, '-j', 'DROP'])
+    for port in BLOCKED_PORTS:
+        _ipt_del(['-s', subnet, '-p', 'tcp', '--dport', str(port), '-j', 'DROP'])
 
 
 def add_host_block_rule(subnet: str):
@@ -480,16 +501,11 @@ class NotSoCode:
             for i in range(len(files)):
                 environment[f'FILE_{i + 1}'] = DIRECTORY_HOME_INPUT + '/' + files[i]['filename']
 
-            # todo: add memory and storage limits, then limit cpu
-
             container = client.containers.create(
                 tag,
-                # cpu limits
-                #cpu_period=1,
-                #cpu_quota=1,
-                #cpu_rt_period=1,
-                #cpu_rt_runtime=1,
-                #cpu_shares=1,
+                cap_add=CAPABILITIES,
+                cap_drop=['ALL'],
+                cpu_shares=CPU_SHARES,
                 detach=True,
                 # device read/write limits
                 #kernel_memory=1,
@@ -504,7 +520,12 @@ class NotSoCode:
                     config={'max-size': f'{MAX_RESULT_LENGTH * 2}b'},
                 ),
                 mem_limit=max_memory,
+                # same as mem_limit so there's no swap on top of it, docker's default doubles it with swap
+                memswap_limit=max_memory,
+                nano_cpus=int(MAX_CPUS * 1e9),
                 pids_limit=ULIMIT_PROCESSES,
+                # a setuid binary (su, passwd, ...) can't take the user back to root, su from root down still works
+                security_opt=['no-new-privileges'],
                 #mounts=[
                 #    docker.types.Mount(
                 #        target='/home',
@@ -513,7 +534,6 @@ class NotSoCode:
                 #        #driver_config=docker.types.DriverConfig('local', options={'size': MAX_STORAGE_SIZE}),
                 #    ),
                 #],
-                #nano_cpus=1,
 
                 #network_disabled=True,
                 #network_mode='none',
@@ -575,7 +595,7 @@ class Job:
 
     @asyncify()
     def execute(self, timeout: float = DEFAULT_TIMEOUT, *args, **kwargs):
-        return self.execute_sync(timeout)
+        return self.execute_sync(timeout, **kwargs)
 
     def kill_sync(self):
         # network cleanup runs even without a container (creation may have failed)
@@ -605,24 +625,37 @@ class Job:
         timeout: float = DEFAULT_TIMEOUT,
         max_file_size_total: int = ULIMIT_FILE_SIZE,
         *args,
+        deadline: Optional[float] = None,
+        kill: bool = True,
         **kwargs,
     ):
+        '''
+        Runs the code for up to `timeout` seconds, or until `deadline` (a `time.time()`) when there is one, so the time it
+        took to get here (the server's request, `create_job`'s setup) counts too. The timeout error says `timeout` either
+        way. Without `kill` the caller removes the container (and its network) itself, after it has answered
+        '''
         if not self.container:
             raise Exception('Container is killed')
 
         now = time.time()
+        wait = timeout if deadline is None else deadline - now
 
         try:
+            if wait <= 0:
+                # the setup used all of it, the code never started
+                print('timeout before start', self.language, self.version, flush=True)
+                raise ExecutionTimeout(timeout)
+
             self.container.start()
 
             try:
-                self.container.wait(timeout=timeout)
+                self.container.wait(timeout=wait)
             except (requests.exceptions.ConnectionError, requests.exceptions.ReadTimeout) as wait_error:
                 # over a unix socket a read timeout comes back as a ConnectionError, over tcp as a ReadTimeout;
                 # any other ConnectionError is the daemon being unreachable, not the code being slow
                 if not isinstance(wait_error, requests.exceptions.ReadTimeout) and 'timed out' not in str(wait_error).lower():
                     raise
-                print('timeout', self.language, self.version, flush=True)
+                print('timeout', self.language, self.version, f'{wait:.1f}s of {timeout:g}s', flush=True)
                 raise ExecutionTimeout(timeout) from wait_error
 
             print('done execution', self.language, self.version, int((time.time() - now) * 1000), flush=True)
@@ -665,7 +698,8 @@ class Job:
                 # incase they delete the output folder
                 pass
         finally:
-            self.kill_sync()
+            if kill:
+                self.kill_sync()
 
         return {
             'language': self.language.to_dict(),

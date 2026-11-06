@@ -1,7 +1,6 @@
-from __future__ import annotations
+from typing import Annotated, Any
 
-from collections.abc import Callable, Iterator
-from typing import Any, Union
+from pydantic import PlainValidator
 
 from notsocode import Languages
 
@@ -9,25 +8,16 @@ from .exceptions import InvalidChoiceError
 
 
 
-class ValidEnums:
-    __enumerable__: Any
-
-    @classmethod
-    def __get_validators__(cls) -> Iterator[Callable[..., Any]]:
-        yield cls.validate
-
-    @classmethod
-    def __get_pydantic_json_schema__(cls, field_schema: dict[str, object]) -> None:
-        field_schema.update(enum=cls.__enumerable__.keys())
-
-    @classmethod
-    def validate(cls, value: str, _ = None) -> Any:
+def enum_by_name(enumerable: Any):
+    # members are picked by name (`PYTHON`), their values are tuples nobody sends
+    def validate(value: Any) -> Any:
+        if isinstance(value, enumerable):
+            return value
         try:
-            return cls.__enumerable__[value]
-        except:
-            raise InvalidChoiceError(cls.__enumerable__.keys())
+            return enumerable[value]
+        except (KeyError, TypeError):
+            raise InvalidChoiceError(enumerable.keys())
+    return PlainValidator(validate, json_schema_input_type=str)
 
 
-
-class ValidLanguages(ValidEnums):
-    __enumerable__ = Languages
+ValidLanguages = Annotated[Languages, enum_by_name(Languages)]

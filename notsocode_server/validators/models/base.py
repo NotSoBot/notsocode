@@ -1,4 +1,4 @@
-from pydantic import BaseModel as PydanticBaseModel, Field, validator
+from pydantic import BaseModel as PydanticBaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 from ..exceptions import InvalidChoiceError
 
@@ -7,20 +7,21 @@ from ..enum import ValidLanguages
 
 
 class BaseModel(PydanticBaseModel):
-    class Config:
-        str_strip_whitespace = True
+    model_config = ConfigDict(str_strip_whitespace=True)
 
 
 class BaseLanguage(BaseModel):
     language: ValidLanguages
-    version: str = Field(default='')
+    # validated even when left out, so it ends up as the language's default
+    version: str = Field(default='', validate_default=True)
 
-    @validator('version', always=True)
-    def version_must_be_in_language(cls, value: str, values: dict):
-        if 'language' not in values:
+    @field_validator('version')
+    @classmethod
+    def version_must_be_in_language(cls, value: str, info: ValidationInfo):
+        if 'language' not in info.data:
             return ''
 
-        language = values['language']
+        language = info.data['language']
         if not value:
             return language.default_version
 

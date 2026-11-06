@@ -10,6 +10,7 @@ from sanic.exceptions import SanicException
 from sanic.response import json
 
 from notsocode import ExecutionTimeout
+from notsocode.notsocode import MAX_STORAGE_SIZE
 from notsocode_server.routers import MyRouter
 from notsocode_server.utilities.constants import HTTP_STATUS_CODES
 from notsocode_server.views import latest, v1
@@ -20,7 +21,6 @@ load_dotenv()
 
 
 app = Sanic('notsocode', router=MyRouter())
-app.config.SANIC_DANTIC_ERROR = True
 
 app.blueprint(latest)
 app.blueprint(v1)
@@ -28,7 +28,6 @@ app.blueprint(v1)
 
 @app.on_request
 def before_request(request: Request):
-    request.ctx.jobs = set()
     request.ctx.started = time.time()
     secret = os.getenv('SECRET')
     if not secret:
@@ -41,10 +40,6 @@ def before_request(request: Request):
 
 @app.on_response
 async def after_request(request: Request, response: HTTPResponse):
-    if hasattr(request.ctx, 'jobs'):
-        for job in request.ctx.jobs:
-            await job.kill()
-
     if hasattr(request.ctx, 'started'):
         started = request.ctx.started
         response.headers.add('x-took', int((time.time() - started) * 1000))
@@ -96,6 +91,12 @@ async def catch_all_validation_exceptions(request: Request, exception: Validatio
 
 
 def start():
+    if not MAX_STORAGE_SIZE:
+        print(
+            'warning: NOTSOCODE_PROCESS_MAX_STORAGE is off, a job can write until the docker disk is full '
+            '(needs overlay2 on xfs mounted with pquota)',
+            flush=True,
+        )
     # one process: sanic's worker process re-imports the app by name, which fails under `python -m`,
     # and the build lock, prune throttle and job state are per-process anyway (jobs run on threads)
     app.run(host='0.0.0.0', port=8080, debug=False, single_process=True)
