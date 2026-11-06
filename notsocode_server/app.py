@@ -14,6 +14,7 @@ from notsocode.notsocode import MAX_STORAGE_SIZE
 from notsocode_server.routers import MyRouter
 from notsocode_server.utilities.constants import HTTP_STATUS_CODES
 from notsocode_server.views import latest, v1
+from notsocode_server.views.execute import print_timings
 
 
 
@@ -43,6 +44,8 @@ async def after_request(request: Request, response: HTTPResponse):
     if hasattr(request.ctx, 'started'):
         started = request.ctx.started
         response.headers.add('x-took', int((time.time() - started) * 1000))
+    # only /execute sets timings, error responses (408 timeouts, 503 full queue) come through here too
+    print_timings(request, response.status, len(response.body or b''))
     return response
 
 

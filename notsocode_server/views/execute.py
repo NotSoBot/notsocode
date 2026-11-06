@@ -1,6 +1,9 @@
 import asyncio
 import base64
 import os
+import time
+
+from typing import Optional
 
 from sanic import Blueprint, Request
 from sanic.exceptions import SanicException
@@ -30,9 +33,39 @@ async def kill_and_release(job: Job):
         jobs.release()
 
 
+def print_timings(request: Request, status, size_out: Optional[int] = None):
+    # one timestamped line per run: `total` is from the body having arrived to the response, the phases add up to most
+    # of it and a missing one (-) is where it raised or got cancelled
+    timings = getattr(request.ctx, 'timings', None)
+    if timings is None:
+        return
+    total = int((time.time() - request.ctx.started) * 1000)
+    phases = ' '.join(f'{phase}={timings.get(phase, "-")}' for phase in ('queue', 'create', 'run', 'encode'))
+    print(
+        time.strftime('%Y-%m-%d %H:%M:%S'),
+        'execute',
+        timings['language'],
+        timings['version'] or '-',
+        status,
+        f'total={total} {phases} in={len(request.body)}B out={"-" if size_out is None else size_out}B',
+        flush=True,
+    )
+
+
 @execute.post('')
 @parse_params(Execute)
 async def execute_script(request: Request, params=Execute):
+    try:
+        return await run_script(request, params)
+    except asyncio.CancelledError:
+        # the caller hung up (notsobot.api's own timeout). Sanic still turns this into a 500 that goes through
+        # `after_request`, cleared so the run isn't printed twice
+        print_timings(request, 'cancelled')
+        request.ctx.timings = None
+        raise
+
+
+async def run_script(request: Request, params: Execute):
     files = []
     if request.files:
         for storages in request.files.values():
@@ -54,12 +87,24 @@ async def execute_script(request: Request, params=Execute):
             file_['filename'] = f'{stem} ({count}).{extension}' if stem else f'{filename} ({count})'
         filenames.add(file_['filename'])
 
+    # each phase's ms, printed with the request's total by `after_request` (also when a phase raised, it's missing then)
+    timings: dict = {'language': params.language.name, 'version': params.version}
+    request.ctx.timings = timings
+    mark = time.time()
+
+    def lap(phase: str):
+        nonlocal mark
+        now = time.time()
+        timings[phase] = int((now - mark) * 1000)
+        mark = now
+
     # the timeout is only the code's, it starts with the container. Waiting for a slot has its own limit instead, so
     # the setup stays inside the extra time the caller gives on top of the timeout (notsobot.api's is 10 seconds)
     try:
         await asyncio.wait_for(jobs.acquire(), timeout=QUEUE_TIMEOUT)
     except asyncio.TimeoutError:
         raise SanicException(f'Too many code runs at once ({MAX_JOBS}), try again in a bit', status_code=503)
+    lap('queue')
 
     try:
         job = await NotSoCode.create_job(
@@ -73,9 +118,13 @@ async def execute_script(request: Request, params=Execute):
     except BaseException:
         jobs.release()
         raise
+    timings['version'] = job.version
+    lap('create')
     try:
         response = await job.execute(timeout=params.timeout, kill=False)
     finally:
+        # the code, its logs and reading /output; a timed out run stops here
+        lap('run')
         # removed in the background, so the response doesn't wait on it: the container and its network (iptables/tc
         # rules too) take seconds when docker is busy. Also when the caller hung up and this got cancelled, the
         # container is killed then instead of running out its time
@@ -89,4 +138,7 @@ async def execute_script(request: Request, params=Execute):
             'value': base64.b64encode(file_['buffer']).decode(),
         }
 
-    return json(response)
+    # base64 and the json both run on the event loop, every other request waits on a big output
+    result = json(response)
+    lap('encode')
+    return result
