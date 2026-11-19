@@ -22,7 +22,42 @@ execute = Blueprint('execute', url_prefix='/execute')
 MAX_JOBS = int(os.getenv('NOTSOCODE_MAX_JOBS', 8))
 # how long a run waits for a free slot before it's turned away with a 503
 QUEUE_TIMEOUT = float(os.getenv('NOTSOCODE_QUEUE_TIMEOUT', 5))
-jobs = asyncio.Semaphore(MAX_JOBS)
+# a run's slot: acquire_slot -> held through setup and the run -> released once its container is gone (kill_and_release,
+# or release_after_setup when the caller hung up mid-setup). Bounded, so a second release raises instead of quietly
+# letting more than MAX_JOBS run
+jobs = asyncio.BoundedSemaphore(MAX_JOBS)
+# background removals still running, the server waits for them when it stops so no container is left behind
+cleanups: set[asyncio.Task] = set()
+
+
+async def acquire_slot(timeout: float) -> bool:
+    # waits up to `timeout` for a slot. Not `wait_for(jobs.acquire())`: before python 3.12 that could lose a slot it got
+    # just as it timed out or the request was cancelled
+    acquiring = asyncio.ensure_future(jobs.acquire())
+    try:
+        await asyncio.wait({acquiring}, timeout=timeout)
+    except BaseException:
+        _drop_acquire(acquiring)
+        raise
+    if acquiring.done():
+        return True
+    _drop_acquire(acquiring)
+    return False
+
+
+def _drop_acquire(acquiring: asyncio.Future):
+    if not acquiring.done():
+        # Semaphore.acquire passes a slot it got meanwhile on to the next waiter when it's cancelled
+        acquiring.cancel()
+    elif not acquiring.cancelled() and acquiring.exception() is None:
+        jobs.release()
+
+
+def run_cleanup(coroutine):
+    task = asyncio.get_running_loop().create_task(coroutine)
+    cleanups.add(task)
+    task.add_done_callback(cleanups.discard)
+    return task
 
 
 async def kill_and_release(job: Job):
@@ -31,6 +66,17 @@ async def kill_and_release(job: Job):
         await job.kill()
     finally:
         jobs.release()
+
+
+async def release_after_setup(setup: asyncio.Future):
+    # the caller hung up during `create_job`: its thread can't be stopped, so the job it makes is removed once it's done
+    # and the slot stays taken until then (otherwise more than MAX_JOBS setups could run)
+    try:
+        job = await setup
+    except BaseException:
+        jobs.release()
+        return
+    await kill_and_release(job)
 
 
 def print_timings(request: Request, status, size_out: Optional[int] = None):
@@ -100,21 +146,25 @@ async def run_script(request: Request, params: Execute):
 
     # the timeout is only the code's, it starts with the container. Waiting for a slot has its own limit instead, so
     # the setup stays inside the extra time the caller gives on top of the timeout (notsobot.api's is 10 seconds)
-    try:
-        await asyncio.wait_for(jobs.acquire(), timeout=QUEUE_TIMEOUT)
-    except asyncio.TimeoutError:
+    if not await acquire_slot(QUEUE_TIMEOUT):
         raise SanicException(f'Too many code runs at once ({MAX_JOBS}), try again in a bit', status_code=503)
     lap('queue')
 
+    # from here the slot is this run's until one of the cleanups below gives it back
+    setup = asyncio.ensure_future(NotSoCode.create_job(
+        params.language,
+        params.code,
+        allow_network=params.allow_network,
+        files=files,
+        stdin=params.stdin,
+        version=params.version,
+    ))
     try:
-        job = await NotSoCode.create_job(
-            params.language,
-            params.code,
-            allow_network=params.allow_network,
-            files=files,
-            stdin=params.stdin,
-            version=params.version,
-        )
+        # shielded, so a hang up doesn't drop the job the setup thread is still making
+        job = await asyncio.shield(setup)
+    except asyncio.CancelledError:
+        run_cleanup(release_after_setup(setup))
+        raise
     except BaseException:
         jobs.release()
         raise
@@ -128,7 +178,7 @@ async def run_script(request: Request, params: Execute):
         # removed in the background, so the response doesn't wait on it: the container and its network (iptables/tc
         # rules too) take seconds when docker is busy. Also when the caller hung up and this got cancelled, the
         # container is killed then instead of running out its time
-        request.app.add_task(kill_and_release(job))
+        run_cleanup(kill_and_release(job))
 
     for i in range(len(response['result']['files'])):
         file_ = response['result']['files'][i]

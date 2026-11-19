@@ -10,7 +10,7 @@ the docker daemon doesn't like launching containers at the same time rapidly, lo
 
 
 # running the server
-the server has to run on a linux x86_64 host with docker, as root: every job with network access gets its own docker network plus iptables (`DOCKER-USER` and `INPUT`) and `tc` rules. it refuses to start if docker's `DOCKER-USER` chain is missing. python 3.10+
+the server has to run on a linux x86_64 host with docker, as root: every job with network access gets its own docker network plus iptables (`DOCKER-USER` and `INPUT`) and `tc` rules. it refuses to start if docker isn't reachable or its `DOCKER-USER` chain is missing. python 3.10+
 
 1. install it editable from a checkout, the images are built from `notsocode/dockerfiles` next to the code and a normal `pip install` doesn't ship that folder
 ```
@@ -32,12 +32,12 @@ sudo .venv/bin/python -m notsocode_server
 ```
 set -a && . ./.env && set +a  # loads SECRET into the shell
 curl -X POST -H "authorization: $SECRET" http://localhost:8080/build/all  # starts the build
-curl -H "authorization: $SECRET" http://localhost:8080/build/all  # waits for it, then gives per-language results
+curl -H "authorization: $SECRET" http://localhost:8080/build/all  # waits up to 50s: `done` with per-language results, or `pending` with the ones so far (ask again)
 ```
 
 5. point notsobot.api at it with `NOTSOCODE_URL=http://<host>:8080` and `NOTSOCODE_TOKEN=<the same secret>`
 
-endpoints (all need the `authorization` header): `GET /languages`, `GET /languages/example?language=`, `POST /execute` (form: `language`, `code`, optional `version`, `stdin`, `timeout`, `allow_network` and files), `POST /build`, `POST|GET /build/all`. a run that goes over its timeout comes back as a 408
+endpoints (all need the `authorization` header): `GET /languages`, `GET /languages/example?language=`, `POST /execute` (form: `language`, `code`, optional `version`, `stdin`, `timeout`, `allow_network` and files), `POST /build`, `POST|GET /build/all`. a run that goes over its timeout comes back as a 408, a full queue or an image another request is still building as a 503
 
 
 # examples
@@ -113,7 +113,9 @@ NOTSOCODE_PROCESS_MAX_CONNECTION_RATE = '3/sec' # new outbound connections a job
 NOTSOCODE_PROCESS_MAX_CONNECTION_BURST = 5
 NOTSOCODE_PROCESS_MAX_CONNECTION_SPEED = '160mbit' # bandwidth limit on the job's network
 
-NOTSOCODE_NETWORK_MAINTENANCE_INTERVAL = 60 # how often (in seconds) stale job networks are pruned and their leftover firewall rules swept
+NOTSOCODE_NETWORK_MAINTENANCE_INTERVAL = 60 # how often (in seconds) stale job containers are removed, job networks pruned and their leftover firewall rules swept
+NOTSOCODE_STALE_CONTAINER_AGE = 165 # seconds after which a job container nobody removed (dropped request, failed removal, earlier process) is force removed, defaults to the max timeout + 120
+NOTSOCODE_BUILD_WAIT = 5 # seconds a run waits on another request's build of its images (base ones included) before a 503
 
 NOTSOCODE_DOCKER_TAG_PREPEND = 'notsocode'
 
@@ -125,6 +127,7 @@ NotSoCode Server
 SECRET = '' # required, each request must have this secret in the 'authorization' header
 NOTSOCODE_MAX_JOBS = 8 # jobs running at once, the rest wait for a slot
 NOTSOCODE_QUEUE_TIMEOUT = 5 # seconds a run waits for a slot before a 503, the run's own timeout only starts with its container
+NOTSOCODE_BUILD_ALL_WAIT = 50 # seconds `GET /build/all` waits before answering `pending`
 ```
 
 

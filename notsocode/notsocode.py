@@ -1,3 +1,4 @@
+import enum
 import io
 import os
 import subprocess
@@ -5,10 +6,12 @@ import tarfile
 import threading
 import time
 
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional, Union
+from typing import Any, Iterator, Optional, Union
 
 import docker
+import docker.errors
 import requests
 
 from notsocode.utilities.constants import BaseImages, Languages, LanguagePrepends
@@ -23,6 +26,13 @@ class ExecutionTimeout(Exception):
     def __init__(self, timeout: float):
         self.timeout = timeout
         super().__init__(f'Code Execution took longer than {timeout:g} seconds')
+
+
+class ImageBuilding(Exception):
+    # another call is building the image and it didn't finish within BUILD_WAIT, the server answers this with a 503
+    def __init__(self, tag: str):
+        self.tag = tag
+        super().__init__(f'{tag} is being built, try again in a minute')
 
 
 USER = os.getenv('NOTSOCODE_USER', 'notsocoder')
@@ -86,14 +96,70 @@ CAPABILITIES = [
 RULE_TAG = 'notsocode-job'
 RULE_CHAINS = ('DOCKER-USER', 'INPUT')
 
-# job networks carry this label so pruning never touches networks that aren't ours
-NETWORK_LABEL = 'notsocode.job'
+# job networks and containers carry this label so pruning never touches anything that isn't ours
+JOB_LABEL = 'notsocode.job'
+NETWORK_LABEL = JOB_LABEL
 # networks are pruned and orphaned rules swept at most this often, every job triggers it
 NETWORK_MAINTENANCE_INTERVAL = int(os.getenv('NOTSOCODE_NETWORK_MAINTENANCE_INTERVAL', 60))
+# a job container this old is one nobody removed (its request was dropped, removing it failed, or the server stopped
+# mid-run). A live one is created after the image build and lives for its run, reading its output and its removal, so
+# two minutes on top of the max timeout is plenty. Not 0 at startup either, in case another process shares the host
+STALE_CONTAINER_AGE = int(os.getenv('NOTSOCODE_STALE_CONTAINER_AGE', MAX_TIMEOUT + 120))
+
+# how long a call waits on another call's build of the same image before it gives up with ImageBuilding. Covers the
+# cached rebuilds right after a restart (a second or two), a real build takes minutes and isn't worth holding a slot for
+BUILD_WAIT = float(os.getenv('NOTSOCODE_BUILD_WAIT', 5))
+
+
+class _SharedLock:
+    '''
+    Readers-writer lock: job network setup and teardown share it, the orphan rule sweep takes it exclusively. Without it
+    a job could free its subnet and the next job reuse it between the sweep listing the networks and deleting the rules,
+    and the sweep would then delete the new job's firewall rules (same specs). Writer first, so a busy server can't
+    starve the sweep. Not reentrant: never take `shared` while already holding it
+    '''
+    def __init__(self):
+        self._condition = threading.Condition()
+        self._shared = 0
+        self._exclusive = False
+
+    @contextmanager
+    def shared(self) -> Iterator[None]:
+        with self._condition:
+            while self._exclusive:
+                self._condition.wait()
+            self._shared += 1
+        try:
+            yield
+        finally:
+            with self._condition:
+                self._shared -= 1
+                if not self._shared:
+                    self._condition.notify_all()
+
+    @contextmanager
+    def exclusive(self) -> Iterator[None]:
+        with self._condition:
+            while self._exclusive:
+                self._condition.wait()
+            # set before waiting out the holders, so new `shared` callers queue behind it
+            self._exclusive = True
+            while self._shared:
+                self._condition.wait()
+        try:
+            yield
+        finally:
+            with self._condition:
+                self._exclusive = False
+                self._condition.notify_all()
+
+
+firewall_lock = _SharedLock()
 
 
 def _ipt(args, check=True):
-    return subprocess.run(['iptables', *args], check=check, capture_output=True, text=True)
+    # -w waits for the xtables lock instead of failing when dockerd or another job's thread holds it
+    return subprocess.run(['iptables', '-w', *args], check=check, capture_output=True, text=True)
 
 
 def _tagged(spec):
@@ -106,7 +172,7 @@ def _ipt_add(chain, spec):
 
 
 def _ipt_del(spec, chain='DOCKER-USER'):
-    subprocess.run(['iptables', '-D', chain, *_tagged(spec)], capture_output=True, text=True)
+    _ipt(['-D', chain, *_tagged(spec)], check=False)
 
 
 def _tc(args, check=True):
@@ -203,10 +269,41 @@ def del_bandwidth_limit(network_id: str):
 
 
 
+class BuildState(enum.Enum):
+    BUILDING = 'building'
+    BUILT = 'built'
+    FAILED = 'failed'
+
+
+class ImageBuild:
+    '''
+    One docker build of a tag in this process, shared by every call that needs the tag while it runs.
+    BUILDING -> BUILT (kept, later calls skip the build) | FAILED (dropped from `NotSoCode.builds`, the next call retries)
+    A tag missing from `NotSoCode.builds` isn't built in this process yet, the first call builds it (cached by docker)
+    '''
+    def __init__(self, tag: str):
+        self.tag = tag
+        self.state = BuildState.BUILDING
+        self.error: Optional[BaseException] = None
+        self._done = threading.Event()
+
+    def finish(self, error: Optional[BaseException] = None):
+        if self.state is not BuildState.BUILDING:
+            raise RuntimeError(f'{self.tag} build already {self.state.value}')
+        self.error = error
+        self.state = BuildState.FAILED if error is not None else BuildState.BUILT
+        self._done.set()
+
+    def wait(self, timeout: float) -> bool:
+        return self._done.wait(timeout)
+
+
+
 class NotSoCode:
-    BUILD_STATUS: dict[str, bool] = {}
-    # builds run on executor threads, the status check-and-set has to be atomic
+    builds: dict[str, ImageBuild] = {}
+    # builds run on executor threads, the claim of a tag has to be atomic
     build_lock = threading.Lock()
+    client_lock = threading.Lock()
     network_maintenance_lock = threading.Lock()
     network_maintenance_last = 0.0
 
@@ -228,8 +325,15 @@ class NotSoCode:
         import ipaddress
         pool = ipaddress.ip_network(pool_cidr)
 
-        # rules are read BEFORE the networks are listed: a job that creates its network and adds its
-        # rules in between would otherwise look orphaned and lose its rules mid-run
+        # no job sets up or tears down its network meanwhile, so the rules and the networks are one consistent snapshot
+        # and a subnet freed and reused mid-sweep can't lose the new job's rules
+        with firewall_lock.exclusive():
+            cls._sweep_orphan_rules(client, pool)
+
+    @classmethod
+    def _sweep_orphan_rules(cls, client, pool):
+        import ipaddress
+
         rules = {chain: _ipt(['-S', chain], check=False).stdout.splitlines() for chain in RULE_CHAINS}
 
         live = set()
@@ -269,8 +373,14 @@ class NotSoCode:
                 return
             cls.network_maintenance_last = now
 
+        # first, so the networks of the containers it removes are pruned in this same pass
         try:
-            until = (datetime.now(timezone.utc) - timedelta(minutes=3)).strftime('%Y-%m-%dT%H:%M:%SZ')
+            cls.remove_stale_containers(client)
+        except Exception as error:
+            print('error removing stale containers', str(error), flush=True)
+
+        try:
+            until =(datetime.now(timezone.utc) - timedelta(minutes=3)).strftime('%Y-%m-%dT%H:%M:%SZ')
             result = client.networks.prune(filters={'label': NETWORK_LABEL, 'until': until})
             print(f"Pruned {len(result['NetworksDeleted'] or [])} networks", flush=True)
         except Exception as error:
@@ -282,6 +392,25 @@ class NotSoCode:
             print('error sweeping firewall rules', str(error), flush=True)
 
     @classmethod
+    def remove_stale_containers(cls, client, max_age: float = STALE_CONTAINER_AGE):
+        # job containers nobody removed: a dropped request, a remove that failed (still running, its rules kept it boxed
+        # in until now), or a server that stopped mid-run. Only labelled ones, older containers predate the label
+        removed = 0
+        cutoff = time.time() - max_age
+        for container in client.containers.list(all=True, sparse=True, filters={'label': JOB_LABEL}):
+            if cutoff < (container.attrs.get('Created') or 0):
+                continue
+            try:
+                container.remove(force=True)
+                removed += 1
+            except docker.errors.NotFound:
+                pass
+            except Exception as error:
+                print('error removing stale container', container.id, str(error), flush=True)
+        if removed:
+            print(f'Removed {removed} stale containers', flush=True)
+
+    @classmethod
     def generate_tag(cls, language_: Languages, version: Optional[str] = None):
         language = language_.language
         version = version or language_.default_version
@@ -289,20 +418,25 @@ class NotSoCode:
 
     @classmethod
     def get_api_client(cls):
-        if not cls.client_api:
-            cls.client_api = docker.APIClient(base_url=os.getenv('DOCKER_BASE_URL'))
-        return cls.client_api
+        with cls.client_lock:
+            if not cls.client_api:
+                cls.client_api = docker.APIClient(base_url=os.getenv('DOCKER_BASE_URL'))
+            return cls.client_api
 
     @classmethod
     def get_client(cls):
-        if not cls.client:
-            if os.getenv('DOCKER_BASE_URL'):
-                cls.client = docker.DockerClient(base_url=os.getenv('DOCKER_BASE_URL'))
-            else:
-                cls.client = docker.from_env()
-            cls.ensure_docker_user_ready()
-            cls.sweep_orphan_rules(cls.client)
-        return cls.client
+        # the client is only kept once the network policy checks pass, so a failed check fails every call instead of
+        # only the first one. The server calls this at startup, so it refuses to start then
+        with cls.client_lock:
+            if not cls.client:
+                if os.getenv('DOCKER_BASE_URL'):
+                    client = docker.DockerClient(base_url=os.getenv('DOCKER_BASE_URL'))
+                else:
+                    client = docker.from_env()
+                cls.ensure_docker_user_ready()
+                cls.sweep_orphan_rules(client)
+                cls.client = client
+            return cls.client
 
     @classmethod
     @asyncify()
@@ -347,26 +481,55 @@ class NotSoCode:
         if not os.path.exists(directory):
             raise Exception('Invalid Build')
 
+        # one BUILD_WAIT for the whole chain (builder, base, language), not one per image
+        wait_deadline = time.time() + BUILD_WAIT
         if base is not None:
-            cls.build_base_sync(base)
+            cls.build_base_sync(base, wait_deadline=wait_deadline)
 
-        return cls._build_sync(directory, cls.generate_tag(language_, version=version), base=base, **kwargs)
+        tag = cls.generate_tag(language_, version=version)
+        return cls._build_sync(directory, tag, base=base, wait_deadline=wait_deadline, **kwargs)
 
     @classmethod
-    def build_base_sync(cls, base: BaseImages, **kwargs):
+    def build_base_sync(cls, base: BaseImages, wait_deadline: Optional[float] = None, **kwargs):
         if base != BaseImages.BUILDER:
-            cls.build_base_sync(BaseImages.BUILDER)
+            cls.build_base_sync(BaseImages.BUILDER, wait_deadline=wait_deadline)
         directory = os.path.dirname(__file__) + os.path.join(cls.dockerfiles_directory, base.value[0], base.value[1])
-        return cls._build_sync(directory, tag=base.tag)
+        return cls._build_sync(directory, tag=base.tag, wait_deadline=wait_deadline)
 
     @classmethod
-    def _build_sync(cls, directory: str, tag: str, base: Optional[BaseImages] = None, **kwargs):
+    def forget_build(cls, tag: str):
+        # BUILT -> missing, for an image that was removed outside this process (`docker image prune -a`), so the next
+        # call builds it again instead of every one failing until a restart
         with cls.build_lock:
-            if tag in cls.BUILD_STATUS:
-                if not cls.BUILD_STATUS[tag]:
-                    raise Exception(f'{tag} is currently being built, come back later')
-                return
-            cls.BUILD_STATUS[tag] = False
+            build = cls.builds.get(tag)
+            if build is not None and build.state is BuildState.BUILT:
+                del cls.builds[tag]
+
+    @classmethod
+    def _build_sync(
+        cls,
+        directory: str,
+        tag: str,
+        base: Optional[BaseImages] = None,
+        wait_deadline: Optional[float] = None,
+        **kwargs,
+    ):
+        with cls.build_lock:
+            build = cls.builds.get(tag)
+            owner = build is None
+            if build is None:
+                build = cls.builds[tag] = ImageBuild(tag)
+
+        if not owner:
+            # another call is building it (a shared base image, mostly): wait for that build instead of failing, a
+            # cached rebuild after a restart is done in a second or two
+            wait = BUILD_WAIT if wait_deadline is None else max(0.0, wait_deadline - time.time())
+            if not build.wait(wait):
+                raise ImageBuilding(tag)
+            if build.state is BuildState.FAILED:
+                raise Exception(f'{tag} failed to build: {build.error}') from build.error
+            return None
+
         kwargs['buildargs'] = {
             'BASE_IMAGE': base.tag if base else BaseImages.BOOKWORM_SLIM.tag,
             'DIRECTORY_HOME': DIRECTORY_HOME,
@@ -386,12 +549,14 @@ class NotSoCode:
 
             if not lines or 'errorDetail' in lines[-1]:
                 raise Exception('\n'.join(x.get('error', x.get('stream', '')) for x in lines) or f'{tag} failed to build')
-        except Exception:
-            # clear the in-progress marker so the build can be retried
-            cls.BUILD_STATUS.pop(tag, None)
+        except BaseException as error:
+            # dropped first, so the next call retries the build instead of seeing this failed one
+            with cls.build_lock:
+                cls.builds.pop(tag, None)
+            build.finish(error)
             raise
 
-        cls.BUILD_STATUS[tag] = True
+        build.finish()
         return lines
 
     @classmethod
@@ -457,35 +622,42 @@ class NotSoCode:
         tag = cls.generate_tag(language, version=version)
 
         client = cls.get_client()
+        # every job, so stale containers are found even when only network-less jobs come in
+        cls.maintain_networks(client)
 
         job = Job(None, language, version=version or language.default_version)
 
         network = None
         if allow_network:
-            cls.maintain_networks(client)
-
-            try:
-                network = client.networks.create(f'{time.time()}', labels={NETWORK_LABEL: '1'})
-            except Exception as error:
-                print('error creating network', str(error))
-
-            if network:
-                job.network = network
+            setup_error: Optional[Exception] = None
+            # the network and its rules appear together as far as the orphan rule sweep can see
+            with firewall_lock.shared():
                 try:
-                    network.reload()
-                    subnet = network.attrs['IPAM']['Config'][0]['Subnet']
-                    job.network_subnet = subnet
+                    network = client.networks.create(f'{time.time()}', labels={JOB_LABEL: '1'})
+                except Exception as error:
+                    # runs without a network then, which fails closed
+                    print('error creating network', str(error), flush=True)
 
-                    # order: conn-limit first (ends up at bottom), egress-block last
-                    # (ends up on top) so internal DROPs sit above the rate-limit RETURN.
-                    add_conn_limit_rule(subnet)
-                    add_egress_block_rules(subnet)
-                    add_host_block_rule(subnet)
-                    add_bandwidth_limit(network.id)
-                except Exception:
-                    # don't leave the network or a partial rule set behind
-                    job.kill_sync()
-                    raise
+                if network:
+                    job.network = network
+                    try:
+                        network.reload()
+                        subnet = network.attrs['IPAM']['Config'][0]['Subnet']
+                        job.network_subnet = subnet
+
+                        # order: conn-limit first (ends up at bottom), egress-block last
+                        # (ends up on top) so internal DROPs sit above the rate-limit RETURN.
+                        add_conn_limit_rule(subnet)
+                        add_egress_block_rules(subnet)
+                        add_host_block_rule(subnet)
+                        add_bandwidth_limit(network.id)
+                    except Exception as error:
+                        setup_error = error
+
+            if setup_error is not None:
+                # don't leave the network or a partial rule set behind; outside the lock, kill takes it itself
+                job.kill_sync()
+                raise setup_error
 
         container_kwargs: dict = {}
         if network:
@@ -511,6 +683,8 @@ class NotSoCode:
                 #kernel_memory=1,
                 environment=environment,
                 labels={
+                    # found by `remove_stale_containers` if this job is never killed
+                    JOB_LABEL: '1',
                     #'com.docker-tc.enabled': '1',
                     #'com.docker-tc.limit': '20mbps',
                     #'com.docker-tc.delay': '50ms',
@@ -556,7 +730,11 @@ class NotSoCode:
             tar_stream.seek(0)
             container.put_archive(DIRECTORY_HOME, tar_stream)
         except Exception as error:
-            print('error creating container', str(error))
+            print('error creating container', str(error), flush=True)
+            if isinstance(error, docker.errors.ImageNotFound):
+                # `docker image prune -a` takes the unused base images too, the language's rebuild needs them back
+                for forgotten in (tag, BaseImages.BOOKWORM_SLIM.tag, BaseImages.BUILDER.tag):
+                    cls.forget_build(forgotten)
             job.kill_sync()
             raise
 
@@ -574,7 +752,19 @@ class NotSoCode:
         return job.execute_sync(timeout=timeout)
 
 
+class JobState(enum.Enum):
+    CREATED = 'created'    # container (and network) made, the code hasn't started
+    RUNNING = 'running'
+    FINISHED = 'finished'  # ran or timed out, its container is still there until the job is killed
+    KILLED = 'killed'      # container and network removed, final
+
+
 class Job:
+    '''
+    CREATED -> RUNNING -> FINISHED -> KILLED, and any state -> KILLED. A job runs once: a second `execute` raises
+    instead of starting the exited container again. A kill whose container removal fails leaves the state (and the
+    container's firewall rules) as they are, the stale container sweep finishes it later
+    '''
     def __init__(
         cls,
         container: Any,
@@ -588,6 +778,17 @@ class Job:
         cls.version = version
         cls.network = network
         cls.network_subnet = network_subnet
+        cls.state = JobState.CREATED
+        # `state` changes under `_state_lock`; kills (the server's background one and a failed setup's) don't overlap
+        cls._state_lock = threading.Lock()
+        cls._kill_lock = threading.Lock()
+
+    def _transition(self, to: JobState, allowed_from: tuple[JobState, ...]) -> bool:
+        with self._state_lock:
+            if self.state not in allowed_from:
+                return False
+            self.state = to
+            return True
 
     @asyncify()
     def kill(self):
@@ -598,27 +799,39 @@ class Job:
         return self.execute_sync(timeout, **kwargs)
 
     def kill_sync(self):
-        # network cleanup runs even without a container (creation may have failed)
-        if self.container:
-            try: self.container.remove(force=True)
-            except: pass
+        with self._kill_lock:
+            if self.container:
+                try:
+                    self.container.remove(force=True)
+                except docker.errors.NotFound:
+                    pass
+                except Exception as error:
+                    # it may still be running, so its rules and network stay and keep it boxed in;
+                    # `remove_stale_containers` removes it later, then the network prune and rule sweep follow
+                    print('error removing container', self.language, self.version, str(error), flush=True)
+                    return
+                self.container = None
 
-        if self.network:
-            subnet = getattr(self, 'network_subnet', None)
-            if subnet:
-                try: del_egress_block_rules(subnet)
-                except Exception: pass
-                try: del_conn_limit_rule(subnet)
-                except Exception: pass
-                try: del_host_block_rule(subnet)
-                except Exception: pass
-            try: del_bandwidth_limit(self.network.id)
-            except Exception: pass
-            try: self.network.remove()
-            except Exception: pass
+            # network cleanup runs even without a container (creation may have failed)
+            if self.network:
+                with firewall_lock.shared():
+                    subnet = self.network_subnet
+                    if subnet:
+                        try: del_egress_block_rules(subnet)
+                        except Exception: pass
+                        try: del_conn_limit_rule(subnet)
+                        except Exception: pass
+                        try: del_host_block_rule(subnet)
+                        except Exception: pass
+                    try: del_bandwidth_limit(self.network.id)
+                    except Exception: pass
+                    # nothing is attached anymore, a network left behind (busy daemon) is pruned within minutes
+                    try: self.network.remove()
+                    except Exception: pass
+                self.network = None
 
-        self.container = None
-        self.network = None
+            with self._state_lock:
+                self.state = JobState.KILLED
 
     def execute_sync(
         self,
@@ -634,8 +847,8 @@ class Job:
         took to get here (the server's request, `create_job`'s setup) counts too. The timeout error says `timeout` either
         way. Without `kill` the caller removes the container (and its network) itself, after it has answered
         '''
-        if not self.container:
-            raise Exception('Container is killed')
+        if not self._transition(JobState.RUNNING, (JobState.CREATED,)):
+            raise Exception('Container is killed' if self.state is JobState.KILLED else f'Job already {self.state.value}')
 
         now = time.time()
         wait = timeout if deadline is None else deadline - now
@@ -698,6 +911,8 @@ class Job:
                 # incase they delete the output folder
                 pass
         finally:
+            # a kill from another thread (the caller hung up) may have gotten here first, KILLED stays then
+            self._transition(JobState.FINISHED, (JobState.RUNNING,))
             if kill:
                 self.kill_sync()
 
