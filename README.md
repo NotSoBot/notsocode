@@ -51,7 +51,7 @@ from notsocode import Languages, NotSoCode
 async def test():
   job = await NotSoCode.create_job(Languages.PYTHON, 'print("OK")')
   response = await job.execute(timeout=10)
-  # output is {language: {language-object}, result: {error, files, output}, version}
+  # output is {language: {language-object}, result: {error, exit_code, files, output}, version}; exit_code is the run's (or the failed compile's) exit status
   print(response['result'])
 
 

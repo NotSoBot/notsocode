@@ -862,7 +862,7 @@ class Job:
             self.container.start()
 
             try:
-                self.container.wait(timeout=wait)
+                waited = self.container.wait(timeout=wait)
             except (requests.exceptions.ConnectionError, requests.exceptions.ReadTimeout) as wait_error:
                 # over a unix socket a read timeout comes back as a ConnectionError, over tcp as a ReadTimeout;
                 # any other ConnectionError is the daemon being unreachable, not the code being slow
@@ -872,6 +872,13 @@ class Job:
                 raise ExecutionTimeout(timeout) from wait_error
 
             print('done execution', self.language, self.version, int((time.time() - now) * 1000), flush=True)
+
+            # the entrypoint exits with the compile step's status when that failed, else the run's (a script's own exit
+            # status, so a bash script that ends in a passing command is 0 even when an earlier one failed). killed by
+            # the kernel (oom, fsize) is 128 + the signal. None when docker didn't say
+            exit_code = waited.get('StatusCode') if isinstance(waited, dict) else None
+            if not isinstance(exit_code, int):
+                exit_code = None
 
             output = self.container.logs(stdout=True, stderr=False)
             error = self.container.logs(stdout=False, stderr=True)
@@ -920,6 +927,7 @@ class Job:
             'language': self.language.to_dict(),
             'result': {
                 'error': error.decode(errors='replace').strip()[:MAX_RESULT_LENGTH],
+                'exit_code': exit_code,
                 'files': files_output,
                 'output': output.decode(errors='replace').strip()[:MAX_RESULT_LENGTH],
             },
