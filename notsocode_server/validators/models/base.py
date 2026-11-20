@@ -22,9 +22,8 @@ class BaseLanguage(BaseModel):
             return ''
 
         language = info.data['language']
-        if not value:
-            return language.default_version
-
+        # replaced versions resolve to their newer folder so saved tags keep working
+        value = language.resolve_version(value)
         if value not in language.versions:
             raise InvalidChoiceError(language.versions)
         return value

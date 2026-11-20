@@ -413,7 +413,7 @@ class NotSoCode:
     @classmethod
     def generate_tag(cls, language_: Languages, version: Optional[str] = None):
         language = language_.language
-        version = version or language_.default_version
+        version = language_.resolve_version(version)
         return f'{cls.tag_prepend}-{language}:{version}'
 
     @classmethod
@@ -448,7 +448,7 @@ class NotSoCode:
         extension = language_.extension
         language = language_.language
         extension = language_.extension
-        version = version or language_.default_version
+        version = language_.resolve_version(version)
 
         directory = os.path.dirname(__file__) + os.path.join(cls.dockerfiles_directory, language, version or '')
         filepath = os.path.join(directory, f'test.{extension}')
@@ -475,7 +475,7 @@ class NotSoCode:
     def build_sync(cls, language_: Languages, version: Optional[str] = None, base: Optional[BaseImages] = None, **kwargs):
         print(kwargs, flush=True)
         language = language_.language
-        version = version or language_.default_version
+        version = language_.resolve_version(version)
     
         directory = os.path.dirname(__file__) + os.path.join(cls.dockerfiles_directory, language, version or '')
         if not os.path.exists(directory):
@@ -618,6 +618,7 @@ class NotSoCode:
             directories=[DIRECTORY_INPUT, DIRECTORY_OUTPUT],
         )
 
+        version = language.resolve_version(version)
         cls.build_sync(language, version=version, base=BaseImages.BOOKWORM_SLIM)
         tag = cls.generate_tag(language, version=version)
 
@@ -625,7 +626,7 @@ class NotSoCode:
         # every job, so stale containers are found even when only network-less jobs come in
         cls.maintain_networks(client)
 
-        job = Job(None, language, version=version or language.default_version)
+        job = Job(None, language, version=version)
 
         network = None
         if allow_network:

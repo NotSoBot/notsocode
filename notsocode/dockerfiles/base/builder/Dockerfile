@@ -35,7 +35,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install meson
 
 # Build dav1d
-RUN wget https://code.videolan.org/videolan/dav1d/-/archive/1.5.3/dav1d-1.5.3.tar.gz -O dav1d.tar.gz && \
+RUN wget https://code.videolan.org/videolan/dav1d/-/archive/1.5.5/dav1d-1.5.5.tar.gz -O dav1d.tar.gz && \
     mkdir -p dav1d && tar xvzf dav1d.tar.gz --strip-components=1 -C dav1d && \
     cd dav1d && mkdir build && cd build && \
     meson setup .. --prefix /usr && ninja && ninja install
@@ -46,15 +46,15 @@ RUN git clone https://aomedia.googlesource.com/aom.git && \
     cmake .. && make -j$(nproc) && make install -j$(nproc) && ldconfig
 
 # Build libde265
-RUN wget https://github.com/strukturag/libde265/releases/download/v1.0.18/libde265-1.0.18.tar.gz -O libde265.tar.gz && \
+RUN wget https://github.com/strukturag/libde265/releases/download/v1.1.3/libde265-1.1.3.tar.gz -O libde265.tar.gz && \
     mkdir -p libde265 && tar xvzf libde265.tar.gz --strip-components=1 -C libde265 && \
     cd libde265 && mkdir build && cd build && \
     cmake .. && make -j$(nproc) && make install -j$(nproc) && ldconfig
 
 # Build libheif
-RUN wget https://github.com/strukturag/libheif/releases/download/v1.21.2/libheif-1.21.2.tar.gz -O libheif.tar.gz && \
+RUN wget https://github.com/strukturag/libheif/releases/download/v1.23.7/libheif-1.23.7.tar.gz -O libheif.tar.gz && \
     mkdir -p libheif && tar xvzf libheif.tar.gz --strip-components=1 -C libheif && \
-    cd libheif && cmake . && make -j$(nproc) && make install -j$(nproc) && ldconfig
+    cd libheif && cmake -DBUILD_TESTING=OFF . && make -j$(nproc) && make install -j$(nproc) && ldconfig
 
 # build lqr
 RUN wget https://github.com/carlobaldassi/liblqr/archive/refs/tags/v0.4.3.tar.gz -O liblqr.tar.gz && \
@@ -62,7 +62,7 @@ RUN wget https://github.com/carlobaldassi/liblqr/archive/refs/tags/v0.4.3.tar.gz
     cd liblqr && ./configure && make -j$(nproc) && make install -j$(nproc) && ldconfig
 
 # Build ImageMagick
-RUN wget https://github.com/ImageMagick/ImageMagick/archive/refs/tags/7.1.2-18.tar.gz -O ImageMagick.tar.gz && \
+RUN wget https://github.com/ImageMagick/ImageMagick/archive/refs/tags/7.1.2-36.tar.gz -O ImageMagick.tar.gz && \
     mkdir -p ImageMagick && tar xvzf ImageMagick.tar.gz --strip-components=1 -C ImageMagick && \
     cd ImageMagick && ./configure --with-lqr --enable-shared --with-modules && \
     make -j$(nproc) && make install -j$(nproc) && ldconfig
@@ -80,7 +80,7 @@ RUN apt-get update && apt-get install -y \
 
 
 # Build GraphicsMagick
-RUN wget https://sourceforge.net/projects/graphicsmagick/files/graphicsmagick/1.3.46/GraphicsMagick-1.3.46.tar.xz -O GraphicsMagick.tar.gz && \
+RUN wget https://sourceforge.net/projects/graphicsmagick/files/graphicsmagick/1.3.49/GraphicsMagick-1.3.49.tar.xz -O GraphicsMagick.tar.gz && \
     mkdir -p GraphicsMagick && tar xvfJ GraphicsMagick.tar.gz --strip-components=1 -C GraphicsMagick && \
     cd GraphicsMagick && \
     ./configure --enable-shared --with-modules && \
@@ -110,9 +110,34 @@ RUN cd sox && make -j$(nproc) && make install -j$(nproc)
 ################################
 
 
+# frei0r 3 always builds the shadert0y filter on linux, it needs the GL/EGL headers (only that plugin links them)
 RUN apt-get update -y && apt-get install -y \
-   pkg-config libopencv-dev libcairo2-dev libgavl-dev
+   pkg-config libopencv-dev libcairo2-dev libgavl-dev \
+   libgl-dev libegl-dev
 
-RUN wget https://github.com/dyne/frei0r/archive/refs/tags/v2.5.6.tar.gz -O frei0r.tar.gz && \
+RUN wget https://github.com/dyne/frei0r/archive/refs/tags/v3.7.1.tar.gz -O frei0r.tar.gz && \
    mkdir -p frei0r && tar xvzf frei0r.tar.gz --strip-components=1 -C frei0r && \
    cd frei0r && cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 . && make -j$(nproc) && make install
+
+
+################################
+##### libvips dependencies #####
+################################
+
+
+# links the libheif/ImageMagick/aom/dav1d built above. bookworm's highway (1.0.3) is under the 1.0.5 libvips wants,
+# so SIMD goes through orc instead. modules off so every loader links into libvips itself. the rpath keeps it on
+# our /usr/local libheif: the base also has debian's older libheif.so.1 (from GraphicsMagick's IM6 runtime)
+RUN apt-get update -y && apt-get install -y \
+   libglib2.0-dev libexpat1-dev libjpeg62-turbo-dev libpng-dev libspng-dev libcgif-dev \
+   libexif-dev liblcms2-dev libimagequant-dev libfftw3-dev liborc-0.4-dev \
+   libpoppler-glib-dev libopenexr-dev libopenjp2-7-dev libjxl-dev libraw-dev \
+   libmatio-dev libcfitsio-dev libarchive-dev
+
+# v8.18.7
+ARG LIBVIPS_COMMIT=24ad4d042940e6bf99a68871ba886ca8847c9c82
+RUN wget https://github.com/libvips/libvips/archive/${LIBVIPS_COMMIT}.tar.gz -O libvips.tar.gz && \
+   mkdir -p libvips && tar xzf libvips.tar.gz --strip-components=1 -C libvips && \
+   cd libvips && LDFLAGS='-Wl,-rpath,/usr/local/lib' meson setup build --prefix /usr/local --libdir lib --buildtype release \
+      -Dmodules=disabled -Dintrospection=disabled -Dexamples=false -Dcplusplus=false && \
+   meson compile -C build && meson install -C build && ldconfig

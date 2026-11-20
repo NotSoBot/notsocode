@@ -15,7 +15,7 @@ WORKDIR /tmp
 ### Latest cmake ###
 ####################
 
-RUN wget https://github.com/Kitware/CMake/releases/download/v4.0.3/cmake-4.0.3-linux-x86_64.sh -O cmake.sh && \
+RUN wget https://github.com/Kitware/CMake/releases/download/v4.5.1/cmake-4.5.1-linux-x86_64.sh -O cmake.sh && \
     mkdir -p /opt/cmake && sh ./cmake.sh --prefix=/opt/cmake --skip-license
 RUN ln -s /opt/cmake/bin/cmake /usr/local/bin/cmake && rm -rf ./cmake.sh
 
@@ -46,8 +46,8 @@ RUN apt-get update -y && apt-get install -y \
 
 COPY --from=builder /usr/local/lib /usr/local/lib/
 COPY --from=builder /usr/local/bin /usr/local/bin/
-COPY --from=builder /usr/local/lib/GraphicsMagick-1.3.46 /usr/local/lib/GraphicsMagick-1.3.46/
-COPY --from=builder /usr/local/share/GraphicsMagick-1.3.46 /usr/local/share/GraphicsMagick-1.3.46/
+COPY --from=builder /usr/local/lib/GraphicsMagick-1.3.49 /usr/local/lib/GraphicsMagick-1.3.49/
+COPY --from=builder /usr/local/share/GraphicsMagick-1.3.49 /usr/local/share/GraphicsMagick-1.3.49/
 
 RUN apt-get update && apt-get install -y \
     libmagickwand-6.q16-6 && \
@@ -78,6 +78,21 @@ COPY --from=builder /usr/local/lib/pkgconfig/frei0r.pc /usr/local/lib/pkgconfig/
 
 RUN apt-get update -y && apt-get install -y \
     libcairo2 && \
+    rm -rf /var/lib/apt/lists/* && \
+    ldconfig
+
+
+################################
+####### libvips Install ########
+################################
+
+# libvips itself came over with /usr/local above (vips, vipsthumbnail, libvips.so.42); these are the
+# runtime halves of the -dev packages the builder compiled it against
+RUN apt-get update -y && apt-get install -y \
+    libglib2.0-0 libexpat1 libjpeg62-turbo libpng16-16 libspng0 libcgif0 \
+    libexif12 liblcms2-2 libimagequant0 libfftw3-double3 liborc-0.4-0 \
+    libpoppler-glib8 libopenexr-3-1-30 libopenjp2-7 libjxl0.7 libraw20 \
+    libmatio11 libcfitsio10 libarchive13 && \
     rm -rf /var/lib/apt/lists/* && \
     ldconfig
 

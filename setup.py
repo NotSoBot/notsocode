@@ -13,13 +13,13 @@ for filepath in glob('notsocode/dockerfiles/**', recursive=True):
 install_requires = [
     'docker==7.2.0',
     'requests==2.34.2',
-    'types-requests==2.33.0.20261006',
+    'types-requests==2.33.0.20261030',
     'python-dotenv==1.2.4',
 ]
 
 server_requires = [
     'sanic==25.12.1',
-    'pydantic==2.14.1',
+    'pydantic==2.14.4',
     'python-dotenv==1.2.4',
 ]
 

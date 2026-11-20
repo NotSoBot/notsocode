@@ -1,0 +1,28 @@
+# torch comes from here (+cpu), pypi's build brings gigabytes of cuda libraries
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+Pillow==11.3.0
+Wand==0.7.2
+pyvips==3.2.0
+ffmpeg-python==0.2.0
+
+requests==2.34.2
+aiohttp==3.14.5
+urllib3==2.8.0
+
+matplotlib==3.11.2
+beautifulsoup4==4.15.0
+yfinance==1.8.0
+pysqlite3==0.6.2
+librosa==1.0.1
+moviepy==2.2.1
+networkx==3.7
+opencv-python-headless==5.1.0.95
+primp==2.0.1
+pydub==0.25.1
+torch==2.15.0+cpu
+
+redis==8.1.0
+numba==0.68.1
+
+pyyaml==6.0.3
